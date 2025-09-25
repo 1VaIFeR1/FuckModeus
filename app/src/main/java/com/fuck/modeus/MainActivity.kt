@@ -1,0 +1,373 @@
+package com.fuck.modeus.ui
+
+import android.annotation.SuppressLint
+import android.app.AlertDialog
+import android.graphics.Color
+import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
+import android.view.LayoutInflater
+import android.view.View
+import android.widget.EditText
+import android.widget.ImageButton
+import android.widget.ProgressBar
+import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.viewModels
+import androidx.appcompat.app.AppCompatActivity
+import androidx.cardview.widget.CardView
+import androidx.core.view.GravityCompat
+import androidx.drawerlayout.widget.DrawerLayout
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import com.fuck.modeus.R
+import com.fuck.modeus.data.ScheduleItem
+import com.fuck.modeus.data.ScheduleTarget
+import com.google.android.material.navigation.NavigationView
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+
+class MainActivity : AppCompatActivity() {
+
+    private val viewModel: MainViewModel by viewModels()
+
+    // Адаптеры
+    private lateinit var scheduleAdapter: ScheduleAdapter
+    private lateinit var pinnedAdapter: SearchAdapter
+    private lateinit var searchResultsAdapter: SearchAdapter
+    private lateinit var weeksAdapter: WeeksAdapter
+    private lateinit var daysAdapter: DaysAdapter
+
+    // View элементы - объявлены здесь
+    private lateinit var drawerLayout: DrawerLayout
+    private lateinit var swipeRefreshLayout: SwipeRefreshLayout
+    private lateinit var recyclerView: RecyclerView
+
+    private val animationDuration = 200L
+    private var selectedTarget: ScheduleTarget? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        // --- ФИНАЛЬНЫЙ КОД ДЛЯ ПОЛНОЭКРАННОГО РЕЖИМА ---
+
+        // Шаг 1: Принудительно включаем ночную тему
+        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+
+        // Шаг 2: Устанавливаем layout
+        setContentView(R.layout.activity_main)
+
+        // Шаг 3: Используем WindowInsetsController для современных API (Android 11+)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        val insetsController = WindowInsetsControllerCompat(window, window.decorView)
+        insetsController.hide(WindowInsetsCompat.Type.systemBars())
+        insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+
+        // Шаг 4: Явно устанавливаем флаги для старых API и делаем бары прозрачными
+        // Это может быть избыточно, но часто решает проблемы на кастомных оболочках
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = (
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                        or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                        or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                        or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                        or View.SYSTEM_UI_FLAG_FULLSCREEN)
+
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+        // --- КОНЕЦ КОДА ДЛЯ ПОЛНОЭКРАННОГО РЕЖИМА ---
+
+        // --- Дальше идет ваша обычная логика инициализации ---
+        drawerLayout = findViewById(R.id.drawerLayout)
+        swipeRefreshLayout = findViewById(R.id.swipeRefreshLayout)
+        recyclerView = findViewById(R.id.recyclerView)
+
+        setupMainContent()
+        setupDrawer()
+        observeViewModel()
+
+        if (savedInstanceState == null) {
+            viewModel.loadInitialSchedule()
+        }
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupMainContent() {
+        // 1. Настройка списка расписания
+        scheduleAdapter = ScheduleAdapter { scheduleItem ->
+            showLessonDetailsDialog(scheduleItem)
+        }
+        recyclerView.apply {
+            adapter = scheduleAdapter
+            layoutManager = LinearLayoutManager(this@MainActivity)
+
+            // ВЕШАЕМ СЛУШАТЕЛЬ СВАЙПОВ
+            setOnTouchListener(object : OnSwipeTouchListener(this@MainActivity) {
+                override fun onSwipeLeft() {
+                    viewModel.selectNextDay()
+                }
+                override fun onSwipeRight() {
+                    viewModel.selectPreviousDay()
+                }
+            })
+        }
+        scheduleAdapter.registerAdapterDataObserver(object : RecyclerView.AdapterDataObserver() {
+            override fun onItemRangeInserted(positionStart: Int, itemCount: Int) {
+                if (positionStart == 0 && itemCount > 0) {
+                    recyclerView.post { recyclerView.scrollToPosition(0) }
+                }
+            }
+        })
+        recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                super.onScrolled(recyclerView, dx, dy)
+
+                // canScrollVertically(-1) возвращает true, если можно скроллить вверх.
+                // Если скроллить вверх нельзя - значит, мы в самом верху.
+                swipeRefreshLayout.isEnabled = !recyclerView.canScrollVertically(-1)
+            }
+        })
+
+        // 2. Настройка списка недель
+        weeksAdapter = WeeksAdapter { week -> viewModel.selectWeek(week) }
+        val rvWeeks = findViewById<RecyclerView>(R.id.rvWeeks)
+        rvWeeks.apply {
+            adapter = weeksAdapter
+            layoutManager = LinearLayoutManager(this@MainActivity, LinearLayoutManager.HORIZONTAL, false)
+        }
+        weeksAdapter.registerAdapterDataObserver(object : RecyclerView.AdapterDataObserver() {
+            override fun onItemRangeInserted(positionStart: Int, itemCount: Int) {
+                val currentWeekIndex = viewModel.weeks.value?.indexOfFirst { it.isSelected } ?: -1
+                if (currentWeekIndex != -1) {
+                    rvWeeks.post { (rvWeeks.layoutManager as LinearLayoutManager).scrollToPositionWithOffset(currentWeekIndex, 0) }
+                }
+            }
+        })
+
+        // 3. Настройка списка дней
+        daysAdapter = DaysAdapter { day -> viewModel.selectDay(day) }
+        findViewById<RecyclerView>(R.id.rvDays).apply {
+            adapter = daysAdapter
+            layoutManager = LinearLayoutManager(this@MainActivity, LinearLayoutManager.HORIZONTAL, false)
+        }
+
+        // 4. Настройка "потяни для обновления"
+        swipeRefreshLayout.setOnRefreshListener {
+            val lastUsedId = getSharedPreferences("schedule_prefs", MODE_PRIVATE).getString("last_used_id", null)
+            if (!lastUsedId.isNullOrBlank()) {
+                viewModel.loadSchedule(lastUsedId)
+            } else {
+                Toast.makeText(this, "Сначала выберите объект в меню", Toast.LENGTH_SHORT).show()
+                swipeRefreshLayout.isRefreshing = false
+            }
+        }
+
+        // 5. Настройка кнопки открытия меню
+        findViewById<ImageButton>(R.id.btnOpenMenu).setOnClickListener {
+            drawerLayout.openDrawer(GravityCompat.END)
+        }
+    }
+    private fun setupDrawer() {
+        // ... (этот метод остается без изменений)
+        val navigationView = findViewById<NavigationView>(R.id.navigationView)
+        val etSearch = navigationView.findViewById<EditText>(R.id.etSearch)
+
+        pinnedAdapter = SearchAdapter(
+            onItemClick = { selectTargetAndFind(it) },
+            onPinClick = { viewModel.togglePin(it) }
+        )
+        navigationView.findViewById<RecyclerView>(R.id.rvPinned).apply {
+            adapter = pinnedAdapter
+            layoutManager = LinearLayoutManager(this@MainActivity)
+        }
+
+        searchResultsAdapter = SearchAdapter(
+            onItemClick = { target ->
+                selectedTarget = target
+                etSearch.setText(target.name)
+                searchResultsAdapter.submitList(emptyList())
+            },
+            onPinClick = { viewModel.togglePin(it) }
+        )
+        navigationView.findViewById<RecyclerView>(R.id.rvSearchResults).apply {
+            adapter = searchResultsAdapter
+            layoutManager = LinearLayoutManager(this@MainActivity)
+        }
+
+        etSearch.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                if (etSearch.hasFocus()) {
+                    viewModel.search(s.toString())
+                }
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+
+        navigationView.findViewById<ImageButton>(R.id.btnFind).setOnClickListener {
+            selectedTarget?.let {
+                selectTargetAndFind(it)
+            } ?: Toast.makeText(this, "Сначала выберите элемент из списка", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun selectTargetAndFind(target: ScheduleTarget) {
+        swipeRefreshLayout.isRefreshing = true // Используем свойство класса
+        viewModel.loadSchedule(target.person_id)
+        getSharedPreferences("schedule_prefs", MODE_PRIVATE).edit()
+            .putString("last_used_id", target.person_id)
+            .apply()
+
+        findViewById<NavigationView>(R.id.navigationView)
+            .findViewById<EditText>(R.id.etSearch).setText("")
+
+        drawerLayout.closeDrawer(GravityCompat.END) // Используем свойство класса
+    }
+
+    private fun observeViewModel() {
+        // Здесь мы можем найти View один раз и использовать их
+        val tvScheduleTitle = findViewById<TextView>(R.id.tvScheduleTitle)
+        val tvNoLessons = findViewById<TextView>(R.id.tvNoLessons)
+        val tvLastUpdate = findViewById<TextView>(R.id.tvLastUpdate)
+        val navigationView = findViewById<NavigationView>(R.id.navigationView)
+        val pbSearch = navigationView.findViewById<ProgressBar>(R.id.pbSearch)
+
+        viewModel.filteredSchedule.observe(this) { scheduleItems ->
+            swipeRefreshLayout.isRefreshing = false
+            val tvNoLessons = findViewById<TextView>(R.id.tvNoLessons)
+
+            val direction = viewModel.swipeDirection.value ?: SwipeDirection.NONE
+
+            // Если анимация не нужна (клик по дню, первая загрузка, обновление)
+            if (direction == SwipeDirection.NONE) {
+                updateScheduleData(scheduleItems, tvNoLessons)
+                return@observe
+            }
+
+            // Если был свайп, запускаем анимацию
+            val screenWidth = resources.displayMetrics.widthPixels.toFloat()
+            val slideOutX = if (direction == SwipeDirection.LEFT) -screenWidth else screenWidth
+            val slideInX = -slideOutX
+
+            recyclerView.animate()
+                .translationX(slideOutX)
+                .alpha(0f)
+                .setDuration(animationDuration)
+                .withEndAction {
+                    updateScheduleData(scheduleItems, tvNoLessons)
+                    recyclerView.translationX = slideInX // Мгновенный перенос за экран
+                    recyclerView.animate()
+                        .translationX(0f)
+                        .alpha(1f)
+                        .setDuration(animationDuration)
+                        .start()
+                }
+                .start()
+        }
+
+        viewModel.weeks.observe(this) { weeks ->
+            weeksAdapter.submitList(weeks)
+        }
+
+        viewModel.days.observe(this) { days ->
+            daysAdapter.submitList(days)
+        }
+
+        viewModel.error.observe(this) { errorMessage ->
+            swipeRefreshLayout.isRefreshing = false // Используем свойство класса
+            Toast.makeText(this, errorMessage, Toast.LENGTH_LONG).show()
+        }
+
+        viewModel.lastUpdateTime.observe(this) { updateTime ->
+            tvLastUpdate.text = updateTime
+        }
+
+        viewModel.scheduleTitle.observe(this) { title ->
+            tvScheduleTitle.text = title
+        }
+
+        viewModel.searchResults.observe(this) { results ->
+            searchResultsAdapter.submitList(results)
+        }
+
+        viewModel.pinnedTargets.observe(this) { pinnedItems ->
+            pinnedAdapter.submitList(pinnedItems)
+        }
+
+        viewModel.searchInProgress.observe(this) { isInProgress ->
+            pbSearch.visibility = if (isInProgress) View.VISIBLE else View.GONE
+        }
+
+    }
+
+    private fun updateScheduleData(scheduleItems: List<ScheduleItem>, tvNoLessons: TextView) {
+        scheduleAdapter.submitList(scheduleItems) {
+            // Эта прокрутка сработает после того, как адаптер закончит свои вычисления
+            if (scheduleItems.isNotEmpty()) {
+                recyclerView.scrollToPosition(0)
+            }
+        }
+        tvNoLessons.visibility = if (scheduleItems.isEmpty()) View.VISIBLE else View.GONE
+    }
+    private fun showLessonDetailsDialog(item: ScheduleItem) {
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_lesson_details, null)
+        val dialog = AlertDialog.Builder(this)
+            .setView(dialogView)
+            .setPositiveButton("Закрыть", null)
+            .create()
+
+        val tvSubject = dialogView.findViewById<TextView>(R.id.tvDetailSubject)
+        val tvModuleFull = dialogView.findViewById<TextView>(R.id.tvDetailModuleFull)
+        val tvTeacher = dialogView.findViewById<TextView>(R.id.tvDetailTeacher)
+        val tvRoom = dialogView.findViewById<TextView>(R.id.tvDetailRoom)
+        val tvGroup = dialogView.findViewById<TextView>(R.id.tvDetailGroup)
+
+        tvSubject.text = item.subject
+        tvModuleFull.text = "📚 Модуль: ${item.moduleFullName ?: "не указан"}"
+
+        // --- УПРАВЛЯЕМ КЛИКАБЕЛЬНОСТЬЮ И ЦВЕТОМ ---
+
+        // Преподаватель
+        tvTeacher.text = "🧑‍🏫 Преподаватель: ${item.teacher}"
+        if (item.teacher != "не назначен") {
+            tvTeacher.setTextColor(getColor(R.color.link_blue)) // Делаем синим
+            tvTeacher.setOnClickListener {
+                searchFor(item.teacher)
+                dialog.dismiss()
+            }
+        }
+
+        // Аудитория
+        tvRoom.text = "🚪 Аудитория: ${item.room} (${item.locationType})"
+        if (!item.room.startsWith("не назначена")) {
+            tvRoom.setTextColor(getColor(R.color.link_blue)) // Делаем синим
+            tvRoom.setOnClickListener {
+                searchFor(item.room)
+                dialog.dismiss()
+            }
+        }
+
+        // Группа - НЕ кликабельна
+        tvGroup.text = "👥 Группа: ${item.groupCode ?: "не указана"} (участников: ${item.teamSize ?: "?"})"
+
+        dialog.show()
+    }
+    private fun searchFor(name: String) {
+        // Проверяем, что это не "пустые" значения
+        if (name == "не назначен" || name.startsWith("не назначена")) return
+
+        drawerLayout.openDrawer(GravityCompat.END) // Открываем боковое меню
+        val etSearch = findViewById<NavigationView>(R.id.navigationView).findViewById<EditText>(R.id.etSearch)
+
+        // Устанавливаем текст в поле
+        etSearch.setText(name)
+        // Перемещаем курсор в конец текста
+        etSearch.setSelection(name.length)
+        // Явно запускаем поиск в ViewModel
+        viewModel.search(name)
+    }
+}
