@@ -315,6 +315,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         _days.postValue(newDays)
+        // --- ФИНАЛЬНЫЙ БЛОК ДЛЯ ОБНОВЛЕНИЯ НЕДЕЛЬ ---
+        _weeks.value?.let { currentWeeks ->
+            val targetWeek = currentWeeks.find { week ->
+                // Простое и надежное сравнение
+                !selectedDate.before(week.startDate) && !selectedDate.after(week.endDate)
+            }
+
+            val previouslySelectedWeek = currentWeeks.find { it.isSelected }
+
+            if (targetWeek != null && targetWeek != previouslySelectedWeek) {
+                val updatedWeeks = currentWeeks.map { it.copy(isSelected = it == targetWeek) }
+                _weeks.postValue(updatedWeeks)
+            }
+        }
+// --- КОНЕЦ ФИНАЛЬНОГО БЛОКА ---
         filterScheduleForSelectedDate()
         if (!isInitial) { // Не сбрасываем при самом первом запуске
             _swipeDirection.postValue(SwipeDirection.NONE)
@@ -385,12 +400,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val dateFormat = SimpleDateFormat("dd", Locale("ru"))
 
             while (weekCalendar.time.before(lastLessonDate) || isSameDay(weekCalendar.time, lastLessonDate)) {
+                // --- НАЧАЛО НОВОГО БЛОКА ---
+
                 // Находим понедельник текущей недели
                 weekCalendar.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
                 val startDate = weekCalendar.time
 
-                // Находим воскресенье текущей недели
-                weekCalendar.add(Calendar.DAY_OF_MONTH, 6)
+                // Находим воскресенье ЭТОЙ ЖЕ недели
+                weekCalendar.set(Calendar.DAY_OF_WEEK, Calendar.SUNDAY)
+                // ВАЖНО: если понедельник был позже воскресенья (например, 30 декабря и 5 января),
+                // значит, воскресенье относится к следующей неделе, нужно откатиться на 7 дней.
+                if (startDate.after(weekCalendar.time)) {
+                    weekCalendar.add(Calendar.DAY_OF_MONTH, -7)
+                }
                 val endDate = weekCalendar.time
 
                 // Пропускаем недели, которые были до начала реального расписания
@@ -411,6 +433,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 weekNumber++
                 weekCalendar.add(Calendar.DAY_OF_MONTH, 1) // Переходим к следующему дню, чтобы начать новую неделю
+
+                // --- КОНЕЦ НОВОГО БЛОКА ---
             }
             _weeks.postValue(weekList)
         }
