@@ -193,7 +193,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     startTime = startDate?.let { timeFormat.format(it) } ?: "",
                     // ИСПРАВЛЕНИЕ 3: Argument type mismatch
                     // В JSON ответа нет поля end, используем startsAt
-                    endTime = inputFormat.parse(event.startsAt)?.let { timeFormat.format(it) } ?: "",
+                    endTime = inputFormat.parse(event.endsAt)?.let { timeFormat.format(it) } ?: "",
                     date = startDate?.let { dateFormat.format(it) } ?: "",
                     teacher = teacherNames,
                     room = roomName,
