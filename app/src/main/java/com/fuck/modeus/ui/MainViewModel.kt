@@ -324,22 +324,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         _days.postValue(newDays)
         // --- ФИНАЛЬНЫЙ БЛОК ДЛЯ ОБНОВЛЕНИЯ НЕДЕЛЬ ---
-        _weeks.value?.let { currentWeeks ->
-            val targetWeek = currentWeeks.find { week ->
-                // Простое и надежное сравнение
-                !selectedDate.before(week.startDate) && !selectedDate.after(week.endDate)
-            }
-
-            val previouslySelectedWeek = currentWeeks.find { it.isSelected }
-
-            if (targetWeek != null && targetWeek != previouslySelectedWeek) {
-                val updatedWeeks = currentWeeks.map { it.copy(isSelected = it == targetWeek) }
-                _weeks.postValue(updatedWeeks)
-            }
-        }
-// --- КОНЕЦ ФИНАЛЬНОГО БЛОКА ---
         filterScheduleForSelectedDate()
-        if (!isInitial) { // Не сбрасываем при самом первом запуске
+
+        if (!isInitial) {
             _swipeDirection.postValue(SwipeDirection.NONE)
         }
     }
@@ -480,16 +467,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     fun selectNextDay() {
-        _swipeDirection.value = SwipeDirection.LEFT // Свайп влево показывает следующий день
+        _swipeDirection.value = SwipeDirection.LEFT
         val calendar = Calendar.getInstance().apply { time = selectedDate }
+
+        // ПРОВЕРКА: Если текущий день - ВОСКРЕСЕНЬЕ
+        if (calendar.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY) {
+            // Находим индекс текущей выбранной недели
+            val currentWeekIndex = _weeks.value?.indexOfFirst { it.isSelected } ?: -1
+            if (currentWeekIndex != -1 && currentWeekIndex + 1 < (_weeks.value?.size ?: 0)) {
+                // Выбираем СЛЕДУЮЩУЮ неделю
+                selectWeek(_weeks.value!![currentWeekIndex + 1])
+                return // Выходим, чтобы не вызывать selectDay дважды
+            }
+        }
+
+        // Стандартная логика для всех остальных дней
         calendar.add(Calendar.DAY_OF_MONTH, 1)
-        selectDay(DayItem(calendar.time, "", "", true))
+        selectDay(DayItem(calendar.time, "", "", false))
     }
 
+
     fun selectPreviousDay() {
-        _swipeDirection.value = SwipeDirection.RIGHT // Свайп вправо показывает предыдущий день
+        _swipeDirection.value = SwipeDirection.RIGHT
         val calendar = Calendar.getInstance().apply { time = selectedDate }
+
+        // ПРОВЕРКА: Если текущий день - ПОНЕДЕЛЬНИК
+        if (calendar.get(Calendar.DAY_OF_WEEK) == Calendar.MONDAY) {
+            val currentWeekIndex = _weeks.value?.indexOfFirst { it.isSelected } ?: -1
+            if (currentWeekIndex > 0) {
+                // Выбираем ПРЕДЫДУЩУЮ неделю
+                selectWeek(_weeks.value!![currentWeekIndex - 1])
+                // ВАЖНО: После выбора недели, нужно вручную выбрать последний день (воскресенье)
+                val prevWeek = _weeks.value!![currentWeekIndex - 1]
+                val sundayCalendar = Calendar.getInstance().apply { time = prevWeek.endDate }
+                selectDay(DayItem(sundayCalendar.time, "", "", false))
+                return // Выходим
+            }
+        }
+
+        // Стандартная логика для всех остальных дней
         calendar.add(Calendar.DAY_OF_MONTH, -1)
-        selectDay(DayItem(calendar.time, "", "", true))
+        selectDay(DayItem(calendar.time, "", "", false))
     }
 }
