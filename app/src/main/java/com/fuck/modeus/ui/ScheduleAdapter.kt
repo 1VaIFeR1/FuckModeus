@@ -10,25 +10,45 @@ import androidx.recyclerview.widget.RecyclerView
 import com.fuck.modeus.R
 import com.fuck.modeus.data.ScheduleItem
 
+// Определяем константы для типов View
+private const val VIEW_TYPE_NORMAL = 1
+private const val VIEW_TYPE_EMPTY = 2
+
 class ScheduleAdapter(
     private val onLongItemClick: (ScheduleItem) -> Unit
-) : ListAdapter<ScheduleItem, ScheduleAdapter.ScheduleViewHolder>(DiffCallback()) {
+) : ListAdapter<ScheduleItem, RecyclerView.ViewHolder>(DiffCallback()) {
 
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ScheduleViewHolder {
-        val view = LayoutInflater.from(parent.context).inflate(R.layout.item_schedule, parent, false)
-        return return ScheduleViewHolder(view, onLongItemClick)
+    // 1. Определяем, какой тип у элемента
+    override fun getItemViewType(position: Int): Int {
+        return if (getItem(position).subject == "Нет пары") VIEW_TYPE_EMPTY else VIEW_TYPE_NORMAL
     }
 
-    override fun onBindViewHolder(holder: ScheduleViewHolder, position: Int) {
+    // 2. Создаем нужный ViewHolder в зависимости от типа
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+        return if (viewType == VIEW_TYPE_NORMAL) {
+            val view = LayoutInflater.from(parent.context).inflate(R.layout.item_schedule, parent, false)
+            NormalViewHolder(view, onLongItemClick)
+        } else {
+            val view = LayoutInflater.from(parent.context).inflate(R.layout.item_empty_lesson, parent, false)
+            EmptyViewHolder(view)
+        }
+    }
+
+    // 3. Биндим данные в зависимости от типа ViewHolder
+    override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
         val item = getItem(position)
-        holder.bind(item)
+        if (holder is NormalViewHolder) {
+            holder.bind(item)
+        } else if (holder is EmptyViewHolder) {
+            holder.bind(item)
+        }
     }
 
-    class ScheduleViewHolder(
+    // --- ViewHolder для обычной пары (старый ScheduleViewHolder) ---
+    class NormalViewHolder(
         itemView: View,
         private val onLongItemClick: (ScheduleItem) -> Unit
     ) : RecyclerView.ViewHolder(itemView) {
-        // Элементы из item_schedule.xml
         private val tvSubject: TextView = itemView.findViewById(R.id.tvSubject)
         private val tvModule: TextView = itemView.findViewById(R.id.tvModule)
         private val tvTime: TextView = itemView.findViewById(R.id.tvTime)
@@ -36,22 +56,18 @@ class ScheduleAdapter(
         private val tvRoom: TextView = itemView.findViewById(R.id.tvRoom)
         private val tvType: TextView = itemView.findViewById(R.id.tvType)
 
-        // Метод bind для ScheduleItem
         fun bind(item: ScheduleItem) {
+            // Вся наша старая логика биндинга для обычной пары
             tvSubject.text = item.subject
-
-            // Логика для отображения или скрытия модуля
             if (!item.moduleShortName.isNullOrBlank()) {
                 tvModule.visibility = View.VISIBLE
                 tvModule.text = "📚 ${item.moduleShortName}"
             } else {
                 tvModule.visibility = View.GONE
             }
-
             tvTime.text = "⏰ ${item.startTime} - ${item.endTime} | 📅 ${item.date}"
             tvTeacher.text = "🧑‍🏫 ${item.teacher}"
             tvRoom.text = "🚪 ${item.room}"
-
             val typeText = when (item.type) {
                 "Лекция" -> "🎓 Лекция"
                 "Практика" -> "✍️ Практика"
@@ -60,23 +76,28 @@ class ScheduleAdapter(
             }
             tvType.text = typeText
             itemView.setOnLongClickListener {
-                onLongItemClick(item) // Вызываем действие, которое нам передали
-                true // Возвращаем true, чтобы система знала, что мы обработали клик
-            }
-            itemView.setOnLongClickListener {
-                onLongItemClick(item) // Вызываем действие, которое нам передали
-                true // Возвращаем true, чтобы система знала, что мы обработали клик
+                onLongItemClick(item)
+                true
             }
         }
     }
 
-    class DiffCallback : DiffUtil.ItemCallback<ScheduleItem>() {
-        override fun areItemsTheSame(oldItem: ScheduleItem, newItem: ScheduleItem): Boolean {
-            return oldItem.fullStartDate == newItem.fullStartDate && oldItem.subject == newItem.subject
-        }
+    // --- НОВЫЙ ViewHolder для пустой пары ---
+    class EmptyViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        private val tvTime: TextView = itemView.findViewById(R.id.tvEmptyLessonTime)
+        // tvLabel нам больше не нужен, но пусть остается, если захочешь вернуть номер пары
 
-        override fun areContentsTheSame(oldItem: ScheduleItem, newItem: ScheduleItem): Boolean {
-            return oldItem == newItem
+        fun bind(item: ScheduleItem) {
+            tvTime.text = "${item.startTime} - ${item.endTime}"
+            // Надпись "Нет пары" уже есть в XML, ее менять не нужно
         }
+    }
+
+    class DiffCallback : DiffUtil.ItemCallback<ScheduleItem>() {
+        override fun areItemsTheSame(oldItem: ScheduleItem, newItem: ScheduleItem): Boolean =
+            oldItem.id == newItem.id // Сравниваем по уникальному ID
+
+        override fun areContentsTheSame(oldItem: ScheduleItem, newItem: ScheduleItem): Boolean =
+            oldItem == newItem
     }
 }

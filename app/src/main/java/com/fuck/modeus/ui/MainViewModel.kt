@@ -30,6 +30,11 @@ enum class SwipeDirection {
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- LiveData для Расписания ---
+    private val timeSlots = mapOf(
+        "08:00" to "09:35", "09:50" to "11:25", "11:55" to "13:30",
+        "13:45" to "15:20", "15:50" to "17:25", "17:35" to "19:10",
+        "19:15" to "20:50", "20:55" to "21:40"
+    )
     private var fullSchedule: List<ScheduleItem> = emptyList()
     private val _filteredSchedule = MutableLiveData<List<ScheduleItem>>()
     val filteredSchedule: LiveData<List<ScheduleItem>> = _filteredSchedule
@@ -101,16 +106,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadInitialSchedule() {
+        // Загружаем все, что сохранено
         val savedScheduleJson = sharedPreferences.getString("schedule_data", null)
-        if (savedScheduleJson != null) {
-            // ПЕРЕНЕСЛИ ЭТИ СТРОКИ ВНУТРЬ IF
-            val lastUsedName = sharedPreferences.getString("last_used_name", "Расписание")
-            _scheduleTitle.postValue(lastUsedName!!)
-            val savedTime = sharedPreferences.getString("last_update_time", "Никогда")
+        val lastUsedName = sharedPreferences.getString("last_used_name", "Расписание не выбрано")
+        val savedTime = sharedPreferences.getString("last_update_time", "Никогда")
 
+        // Сразу обновляем заголовок
+        _scheduleTitle.postValue(lastUsedName!!)
+        _lastUpdateTime.postValue("Последнее обновление: $savedTime")
+
+        if (savedScheduleJson != null) {
             val type = object : TypeToken<List<ScheduleItem>>() {}.type
             fullSchedule = Gson().fromJson(savedScheduleJson, type)
-            _lastUpdateTime.postValue("Последнее обновление: $savedTime")
+            // После загрузки полного расписания из памяти, сразу же его обрабатываем
             processNewScheduleData()
         }
     }
@@ -343,8 +351,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 cal1.get(Calendar.DAY_OF_YEAR) == cal2.get(Calendar.DAY_OF_YEAR)
     }
     private fun filterScheduleForSelectedDate() {
-        val filtered = fullSchedule.filter { isSameDay(Date(it.fullStartDate), selectedDate) }
-        _filteredSchedule.postValue(filtered)
+        val lessonsForDay = fullSchedule.filter { isSameDay(Date(it.fullStartDate), selectedDate) }
+
+        if (lessonsForDay.isEmpty()) {
+            _filteredSchedule.postValue(emptyList())
+            return
+        }
+
+        val lessonsMap = lessonsForDay.associateBy { it.startTime }
+        var pairCounter = 1
+
+        val fullDaySchedule = timeSlots.map { (startTime, endTime) ->
+            val pairName = "${pairCounter++} пара"
+            lessonsMap[startTime] ?: createEmptyLesson(startTime, endTime, pairName)
+        }
+
+        _filteredSchedule.postValue(fullDaySchedule)
+    }
+    private fun createEmptyLesson(startTime: String, endTime: String, pairName: String): ScheduleItem {
+        return ScheduleItem(
+            id = UUID.randomUUID().toString(),
+            fullStartDate = 0L,
+            subject = "Нет пары",
+            moduleShortName = pairName, // "1 пара", "2 пара"...
+            startTime = startTime,
+            endTime = endTime, // <-- ТЕПЕРЬ ПЕРЕДАЕМ ВРЕМЯ ОКОНЧАНИЯ
+            date = "",
+            teacher = "",
+            room = "",
+            type = "",
+            moduleFullName = null,
+            groupCode = null,
+            teamSize = null,
+            locationType = ""
+        )
     }
     private fun generateWeeks() {
         if (fullSchedule.isEmpty()) {
