@@ -133,6 +133,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val embedded = response.embedded
         val scheduleItems = mutableListOf<ScheduleItem>()
 
+        // Создаем карты для быстрого доступа
         val personsMap = embedded.persons.associateBy { it.id }
         val roomsMap = embedded.rooms.associateBy { it.id }
         val courseUnitRealizationsMap = embedded.courseUnitRealizations.associateBy { it.id }
@@ -158,14 +159,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        val inputFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
-        val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+        // Этот парсер ожидает часовой пояс (XXX)
+        val inputFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US)
+        val timeFormat = SimpleDateFormat("HH:mm", Locale("ru"))
         val dateFormat = SimpleDateFormat("d MMMM", Locale("ru"))
 
         for (event in embedded.events) {
             val teacherNames = eventToPersonIds[event.id]
                 ?.mapNotNull { personId -> personsMap[personId]?.fullName }
                 ?.joinToString(separator = "\n") ?: "не назначен"
+
             val roomName = eventToRoomId[event.id]
                 ?.let { roomId -> roomsMap[roomId]?.name } ?: "не назначена/онлайн"
 
@@ -173,36 +176,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val moduleShortName = courseUnitId?.let { courseUnitRealizationsMap[it]?.nameShort }
             val moduleFullName = courseUnitId?.let { courseUnitRealizationsMap[it]?.name }
 
-            // ИСПРАВЛЕНИЕ 1: Unresolved reference 'cycleRealization'
-            // Правильное имя поля 'cycleRealization', а не 'cycle-realization'
             val cycleId = event.links.cycleRealization?.href?.substring(1)
             val groupCode = cycleId?.let { cycleRealizationsMap[it]?.code }
 
             val teamSize = eventTeamsMap[event.id]?.size
             val locationType = if (eventLocationsMap[event.id]?.customLocation == "Online") "Online" else "Очно"
 
+            // ИСПОЛЬЗУЕМ ПОЛЯ С ЧАСОВЫМ ПОЯСОМ: event.start и event.end
             val startDate = inputFormat.parse(event.start)
+            val endDate = inputFormat.parse(event.end) // <-- ИСПРАВЛЕНИЕ ЗДЕСЬ
 
-            // ИСПРАВЛЕНИЕ 2: 'when' must be exhaustive.
+            val startTimeStr = startDate?.let { timeFormat.format(it) } ?: ""
+            val endTimeStr = endDate?.let { timeFormat.format(it) } ?: "" // <-- И ИСПРАВЛЕНИЕ ЗДЕСЬ
+            val dateStr = startDate?.let { dateFormat.format(it) } ?: ""
+
             val lessonType = when (event.type) {
                 "LECT" -> "Лекция"
                 "SEMI" -> "Практика"
                 "LAB" -> "Лабораторная"
                 "EXAM" -> "Экзамен"
-                else -> event.type // Добавляем ветку else
+                else -> event.type
             }
 
             scheduleItems.add(
                 ScheduleItem(
-                    id = event.id, // Добавили ID
+                    id = event.id,
                     fullStartDate = startDate?.time ?: 0L,
                     subject = event.name,
                     moduleShortName = moduleShortName,
-                    startTime = startDate?.let { timeFormat.format(it) } ?: "",
-                    // ИСПРАВЛЕНИЕ 3: Argument type mismatch
-                    // В JSON ответа нет поля end, используем startsAt
-                    endTime = inputFormat.parse(event.endsAt)?.let { timeFormat.format(it) } ?: "",
-                    date = startDate?.let { dateFormat.format(it) } ?: "",
+                    startTime = startTimeStr,
+                    endTime = endTimeStr,
+                    date = dateStr,
                     teacher = teacherNames,
                     room = roomName,
                     type = lessonType,
