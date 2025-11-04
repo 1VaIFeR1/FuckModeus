@@ -1,78 +1,131 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- 1. Заменяем ScrollView+LinearLayout на RelativeLayout -->
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true">
+    android:padding="16dp">
 
-    <!-- Вот этот LinearLayout - ЕДИНСТВЕННЫЙ дочерний элемент ScrollView -->
+    <!-- 2. "Прибиваем" переключатель к низу -->
+    <!-- 1. Контейнер для нижнего переключателя. Прибит к низу. -->
     <LinearLayout
+        android:id="@+id/containerNavMode"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="16dp">
+        android:layout_alignParentBottom="true"
+        android:background="?attr/selectableItemBackground"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
 
-        <!-- А теперь ВСЕ ваши элементы лежат внутри этого LinearLayout -->
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switchNavigationMode"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:clickable="false"
+            android:text="Навигация по касанию" />
+    </LinearLayout>
+
+    <!-- 2. Контейнер для верхнего переключателя. Расположен НАД нижним. -->
+    <LinearLayout
+        android:id="@+id/containerShowEmpty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_above="@id/containerNavMode"
+        android:background="?attr/selectableItemBackground"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switchShowEmptyLessons"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:clickable="false"
+            android:text="Отображать 'Нет пары'" />
+    </LinearLayout>
+
+    <!-- 3. Весь остальной контент оборачиваем в ScrollView,
+           который теперь находится НАД переключателем -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_above="@id/containerShowEmpty"
+        android:layout_alignParentTop="true"
+        android:layout_marginBottom="16dp"
+        android:fillViewport="true">
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@drawable/bg_search_field"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingStart="16dp"
-            android:paddingEnd="8dp">
+            android:orientation="vertical">
 
-            <EditText
-                android:id="@+id/etSearch"
-                android:layout_width="0dp"
+            <!-- ВСЕ СТАРОЕ СОДЕРЖИМОЕ МЕНЮ (ПОИСК, СПИСКИ) ТЕПЕРЬ ЗДЕСЬ -->
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:background="@null"
-                android:hint="Поиск..."
-                android:imeOptions="actionDone"
-                android:inputType="text"
-                android:paddingVertical="12dp" />
+                android:background="@drawable/bg_search_field"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="16dp"
+                android:paddingEnd="8dp">
 
-            <ImageButton
-                android:id="@+id/btnFind"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@android:drawable/ic_menu_search" />
+                <EditText
+                    android:id="@+id/etSearch"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="@null"
+                    android:hint="Поиск..."
+                    android:imeOptions="actionDone"
+                    android:inputType="text"
+                    android:paddingVertical="12dp" />
+
+                <ImageButton
+                    android:id="@+id/btnFind"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@android:drawable/ic_menu_search" />
+            </LinearLayout>
+
+            <ProgressBar
+                android:id="@+id/pbSearch"
+                style="?android:attr/progressBarStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="8dp"
+                android:visibility="gone" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="Закрепленные:"
+                android:textStyle="bold" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rvPinned"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginVertical="16dp"
+                android:background="?android:attr/listDivider" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rvSearchResults"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+
         </LinearLayout>
+    </ScrollView>
 
-        <ProgressBar
-            android:id="@+id/pbSearch"
-            style="?android:attr/progressBarStyle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:layout_marginTop="8dp"
-            android:visibility="gone" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="Закрепленные:"
-            android:textStyle="bold" />
-
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/rvPinned"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginVertical="16dp"
-            android:background="?android:attr/listDivider" />
-
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/rvSearchResults"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" /> <!-- ИЗМЕНЕНИЕ: убираем layout_weight и 0dp -->
-
-    </LinearLayout>
-
-</ScrollView>
+</RelativeLayout>

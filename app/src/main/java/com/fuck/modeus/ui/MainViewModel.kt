@@ -2,10 +2,12 @@ package com.fuck.modeus.ui
 
 import android.app.Application
 import android.util.Log
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
+import com.fuck.modeus.data.CachedData
 import com.fuck.modeus.data.DayItem
 import com.fuck.modeus.data.ScheduleItem
 import com.fuck.modeus.data.ScheduleResponse
@@ -26,6 +28,7 @@ import java.util.*
 enum class SwipeDirection {
     LEFT, RIGHT, NONE // NONE для начальной загрузки
 }
+enum class NavigationMode { TOUCH, SWIPE }
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -65,61 +68,138 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Новая LiveData для управления анимацией
     private val _swipeDirection = MutableLiveData(SwipeDirection.NONE)
     val swipeDirection: LiveData<SwipeDirection> = _swipeDirection
+    private val _navigationMode = MutableLiveData(NavigationMode.TOUCH)
+    val navigationMode: LiveData<NavigationMode> = _navigationMode
+    private val _showEmptyLessons = MutableLiveData(true) // По умолчанию включено
+    val showEmptyLessons: LiveData<Boolean> = _showEmptyLessons
 
+    private val cacheFileName = "schedule_cache.json"
     private val sharedPreferences =
         application.getSharedPreferences("schedule_prefs", Application.MODE_PRIVATE)
 
     init {
         loadAllIds()
+        loadNavigationMode()
+        loadShowEmptyLessonsMode()
     }
 
+    private fun loadShowEmptyLessonsMode() {
+        val shouldShow = sharedPreferences.getBoolean("show_empty_lessons", true) // По умолчанию true
+        _showEmptyLessons.postValue(shouldShow)
+    }
+
+
+    fun setShowEmptyLessons(shouldShow: Boolean) {
+        // Проверяем, изменилось ли значение, чтобы избежать лишней работы
+        if (_showEmptyLessons.value == shouldShow) return
+
+        _showEmptyLessons.value = shouldShow
+        sharedPreferences.edit().putBoolean("show_empty_lessons", shouldShow).apply()
+
+        // Явно перезапускаем фильтрацию с уже обновленным значением
+        filterScheduleForSelectedDate()
+    }
+    private fun loadNavigationMode() {
+        // Загружаем сохраненное значение, по умолчанию - TOUCH
+        val mode = sharedPreferences.getString("nav_mode", NavigationMode.TOUCH.name)
+        _navigationMode.postValue(NavigationMode.valueOf(mode ?: NavigationMode.TOUCH.name))
+    }
+    fun setNavigationMode(isTouchMode: Boolean) {
+        val newMode = if (isTouchMode) NavigationMode.TOUCH else NavigationMode.SWIPE
+        _navigationMode.postValue(newMode)
+        sharedPreferences.edit().putString("nav_mode", newMode.name).apply()
+    }
     // --- Логика Расписания ---
     fun loadSchedule(personId: String) {
-        val targetName = allTargets.find { it.person_id == personId }?.name ?: "Расписание"
-        _scheduleTitle.postValue(targetName)
-
-        // СОХРАНЯЕМ ИМЯ В ПАМЯТЬ
-        sharedPreferences.edit().putString("last_used_name", targetName).apply()
         viewModelScope.launch {
             try {
                 val requestBody = JsonObject().apply {
-                    addProperty("size", 1000)
+                    addProperty("size", 10000)
                     addProperty("timeMin", "2024-08-31T21:00:00.000Z")
                     addProperty("timeMax", "2026-07-06T20:59:59.999Z")
                     add("attendeePersonId", Gson().toJsonTree(listOf(personId)))
                 }
-                val response = RetrofitInstance.api.getSchedule(requestBody)
-                if (response.isSuccessful && response.body() != null) {
-                    val scheduleItems = parseResponse(response.body()!!)
+
+                // --- ИСПОЛЬЗУЕМ Retrofit для получения СТРОКИ, а не готового объекта ---
+                val responseString = RetrofitInstance.api.getScheduleAsString(requestBody).string()
+
+                // --- ПРОВЕРЯЕМ, НЕ ПУСТАЯ ЛИ СТРОКА ---
+                if (responseString.isNotBlank()) {
+                    // Парсим строку в наш объект ScheduleResponse
+                    val scheduleResponse = Gson().fromJson(responseString, ScheduleResponse::class.java)
+
+                    val scheduleItems = parseResponse(scheduleResponse)
                     fullSchedule = scheduleItems.sortedBy { it.fullStartDate }
-                    saveScheduleToPrefs(fullSchedule)
-                    updateLastUpdateTime()
-                    // ГЛАВНОЕ ИЗМЕНЕНИЕ: После загрузки фильтруем и генерируем дни/недели
+
+                    val targetName = allTargets.find { it.person_id == personId }?.name ?: "Расписание"
+                    val currentTime = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.getDefault()).format(Date())
+
+                    // Создаем объект для кеширования
+                    val dataToCache = CachedData(
+                        targetId = personId,
+                        targetName = targetName,
+                        lastUpdateTime = currentTime,
+                        scheduleJsonResponse = responseString // Сохраняем исходную строку
+                    )
+                    saveDataToFile(dataToCache) // Сохраняем в файл
+
+                    // Обновляем UI
+                    _scheduleTitle.postValue(targetName)
+                    _lastUpdateTime.postValue("Последнее обновление: $currentTime")
                     processNewScheduleData()
                 } else {
-                    _error.postValue("Ошибка: ${response.code()} ${response.message()}")
+                    _error.postValue("Ошибка: получен пустой ответ от сервера.")
                 }
             } catch (e: Exception) {
                 _error.postValue("Ошибка сети: ${e.message}")
+                // В случае ошибки сети, пытаемся загрузить старые данные из файла
+                loadDataFromFile()
             }
         }
     }
 
     fun loadInitialSchedule() {
-        // Загружаем все, что сохранено
-        val savedScheduleJson = sharedPreferences.getString("schedule_data", null)
-        val lastUsedName = sharedPreferences.getString("last_used_name", "Расписание не выбрано")
-        val savedTime = sharedPreferences.getString("last_update_time", "Никогда")
+        loadDataFromFile()
+    }
+    private fun saveDataToFile(cachedData: CachedData) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val jsonString = Gson().toJson(cachedData)
+                val fileOutputStream = getApplication<Application>().openFileOutput(cacheFileName, Context.MODE_PRIVATE)
+                fileOutputStream.write(jsonString.toByteArray())
+                fileOutputStream.close()
+            } catch (e: Exception) {
+                Log.e("ViewModel", "Ошибка сохранения кеша", e)
+            }
+        }
+    }
 
-        // Сразу обновляем заголовок
-        _scheduleTitle.postValue(lastUsedName!!)
-        _lastUpdateTime.postValue("Последнее обновление: $savedTime")
+    private fun loadDataFromFile() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val fileInputStream = getApplication<Application>().openFileInput(cacheFileName)
+                val jsonString = fileInputStream.reader().readText()
+                fileInputStream.close()
 
-        if (savedScheduleJson != null) {
-            val type = object : TypeToken<List<ScheduleItem>>() {}.type
-            fullSchedule = Gson().fromJson(savedScheduleJson, type)
-            // После загрузки полного расписания из памяти, сразу же его обрабатываем
-            processNewScheduleData()
+                val cachedData = Gson().fromJson(jsonString, CachedData::class.java)
+
+                // Парсим JSON из кеша
+                val scheduleResponse = Gson().fromJson(cachedData.scheduleJsonResponse, ScheduleResponse::class.java)
+                val scheduleItems = parseResponse(scheduleResponse)
+                fullSchedule = scheduleItems.sortedBy { it.fullStartDate }
+
+                // Обновляем UI из кеша
+                _scheduleTitle.postValue(cachedData.targetName)
+                _lastUpdateTime.postValue("Последнее обновление: ${cachedData.lastUpdateTime}")
+                processNewScheduleData()
+
+            } catch (e: Exception) {
+                Log.e("ViewModel", "Файл кеша не найден или поврежден", e)
+                _scheduleTitle.postValue("Расписание не загружено")
+
+                // ДОБАВЛЯЕМ ОПОВЕЩЕНИЕ ДЛЯ ПОЛЬЗОВАТЕЛЯ
+                _error.postValue("Сохраненное расписание не найдено. Выберите объект для поиска в меню.")
+            }
         }
     }
     private fun processNewScheduleData() {
@@ -344,6 +424,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun filterScheduleForSelectedDate() {
         val lessonsForDay = fullSchedule.filter { isSameDay(Date(it.fullStartDate), selectedDate) }
 
+        if (_showEmptyLessons.value == false) {
+            _filteredSchedule.postValue(lessonsForDay)
+            return
+        }
+
         if (lessonsForDay.isEmpty()) {
             _filteredSchedule.postValue(emptyList())
             return
@@ -512,5 +597,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // Стандартная логика для всех остальных дней
         calendar.add(Calendar.DAY_OF_MONTH, -1)
         selectDay(DayItem(calendar.time, "", "", false))
+    }
+    fun refreshSchedule() {
+        // Пытаемся найти ID в нашем кеше
+        try {
+            val fileInputStream = getApplication<Application>().openFileInput(cacheFileName)
+            val jsonString = fileInputStream.reader().readText()
+            fileInputStream.close()
+            val cachedData = Gson().fromJson(jsonString, CachedData::class.java)
+            loadSchedule(cachedData.targetId) // Запускаем обновление для сохраненного ID
+        } catch (e: Exception) {
+            // Если кеша нет, ничего не делаем
+            Log.e("ViewModel", "Не могу обновить: кеш пуст")
+        }
     }
 }

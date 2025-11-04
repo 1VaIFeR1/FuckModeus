@@ -1,59 +1,54 @@
 package com.fuck.modeus.ui
 
 import android.content.Context
-import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
 import kotlin.math.abs
 
 open class OnSwipeTouchListener(context: Context) : View.OnTouchListener {
 
-    private val gestureDetector: GestureDetector
+    private var startX = 0f
+    private var startY = 0f
 
-    companion object {
-        private const val SWIPE_THRESHOLD = 100
-        private const val SWIPE_VELOCITY_THRESHOLD = 100
-    }
-
-    init {
-        gestureDetector = GestureDetector(context, GestureListener())
-    }
+    // Порог, после которого движение считается свайпом, а не тапом
+    private val SWIPE_DISTANCE_THRESHOLD = 100
 
     override fun onTouch(v: View, event: MotionEvent): Boolean {
-        return gestureDetector.onTouchEvent(event)
-    }
+        when (event.action) {
+            MotionEvent.ACTION_DOWN -> {
+                // 1. Запоминаем, где палец коснулся экрана
+                startX = event.x
+                startY = event.y
+                // Возвращаем false, чтобы не мешать другим слушателям (например, для долгого нажатия)
+                return false
+            }
+            MotionEvent.ACTION_UP -> {
+                // 2. Палец оторвался от экрана, анализируем жест
+                val endX = event.x
+                val endY = event.y
+                val diffX = endX - startX
+                val diffY = endY - startY
 
-    private inner class GestureListener : GestureDetector.SimpleOnGestureListener() {
-
-        override fun onDown(e: MotionEvent): Boolean {
-            return true
-        }
-
-        override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
-            if (e1 == null) return false
-            val diffX = e2.x - e1.x
-            val diffY = e2.y - e1.y
-
-            return try {
+                // 3. Проверяем, что это был именно горизонтальный свайп
+                // Условие: путь по горизонтали больше, чем по вертикали
                 if (abs(diffX) > abs(diffY)) {
-                    if (abs(diffX) > SWIPE_THRESHOLD && abs(velocityX) > SWIPE_VELOCITY_THRESHOLD) {
+
+                    // 4. Проверяем, что это был достаточно длинный свайп, а не случайное дрожание пальца
+                    if (abs(diffX) > SWIPE_DISTANCE_THRESHOLD) {
                         if (diffX > 0) {
-                            onSwipeRight()
+                            onSwipeRight() // Движение вправо
                         } else {
-                            onSwipeLeft()
+                            onSwipeLeft() // Движение влево
                         }
-                        true // Свайп был, мы его "поглотили"
-                    } else {
-                        false
+                        // 5. Мы обработали этот жест как свайп, "съедаем" его, возвращая true
+                        return true
                     }
-                } else {
-                    false // Вертикальный свайп нас не интересует
                 }
-            } catch (exception: Exception) {
-                exception.printStackTrace()
-                false
             }
         }
+        // 6. Во всех остальных случаях (вертикальный скролл, тап, короткое движение)
+        // мы не вмешиваемся и позволяем системе обработать жест как обычно.
+        return false
     }
 
     open fun onSwipeRight() {}

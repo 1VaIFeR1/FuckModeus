@@ -96,3 +96,9 @@ data class ScheduleItem(
     val teamSize: Int?,
     val locationType: String // "Online" или "Очно"
 )
+data class CachedData(
+    val targetId: String,
+    val targetName: String,
+    val lastUpdateTime: String,
+    val scheduleJsonResponse: String // Здесь будет храниться весь JSON-ответ сервера как строка
+)

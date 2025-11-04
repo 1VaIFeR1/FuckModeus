@@ -29,6 +29,12 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import android.view.MotionEvent
+import kotlin.math.abs
+import android.view.GestureDetector
+import android.widget.LinearLayout
+import android.content.Intent
+import android.net.Uri
 
 class MainActivity : AppCompatActivity() {
 
@@ -98,22 +104,13 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("ClickableViewAccessibility")
     private fun setupMainContent() {
         // 1. Настройка списка расписания
-        scheduleAdapter = ScheduleAdapter { scheduleItem ->
-            showLessonDetailsDialog(scheduleItem)
-        }
+        scheduleAdapter = ScheduleAdapter()
         recyclerView.apply {
             adapter = scheduleAdapter
             layoutManager = LinearLayoutManager(this@MainActivity)
 
             // ВЕШАЕМ СЛУШАТЕЛЬ СВАЙПОВ
-            setOnTouchListener(object : OnSwipeTouchListener(this@MainActivity) {
-                override fun onSwipeLeft() {
-                    viewModel.selectNextDay()
-                }
-                override fun onSwipeRight() {
-                    viewModel.selectPreviousDay()
-                }
-            })
+
         }
         scheduleAdapter.registerAdapterDataObserver(object : RecyclerView.AdapterDataObserver() {
             override fun onItemRangeInserted(positionStart: Int, itemCount: Int) {
@@ -157,13 +154,7 @@ class MainActivity : AppCompatActivity() {
 
         // 4. Настройка "потяни для обновления"
         swipeRefreshLayout.setOnRefreshListener {
-            val lastUsedId = getSharedPreferences("schedule_prefs", MODE_PRIVATE).getString("last_used_id", null)
-            if (!lastUsedId.isNullOrBlank()) {
-                viewModel.loadSchedule(lastUsedId)
-            } else {
-                Toast.makeText(this, "Сначала выберите объект в меню", Toast.LENGTH_SHORT).show()
-                swipeRefreshLayout.isRefreshing = false
-            }
+            viewModel.refreshSchedule()
         }
 
         // 5. Настройка кнопки открытия меню
@@ -174,7 +165,51 @@ class MainActivity : AppCompatActivity() {
     private fun setupDrawer() {
         // ... (этот метод остается без изменений)
         val navigationView = findViewById<NavigationView>(R.id.navigationView)
+        val switchShowEmpty = navigationView.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchShowEmptyLessons)
+        val containerShowEmpty = navigationView.findViewById<LinearLayout>(R.id.containerShowEmpty)
+        containerShowEmpty.setOnClickListener {
+            // При клике инвертируем состояние свитча и вызываем ViewModel
+            val newState = !switchShowEmpty.isChecked
+            switchShowEmpty.isChecked = newState
+            viewModel.setShowEmptyLessons(newState)
+        }
+
+        viewModel.showEmptyLessons.observe(this) { shouldShow ->
+            if (switchShowEmpty.isChecked != shouldShow) {
+                switchShowEmpty.isChecked = shouldShow
+            }
+        }
+        val switchNavMode = navigationView.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchNavigationMode)
+        val containerNavMode = navigationView.findViewById<LinearLayout>(R.id.containerNavMode)
+        containerNavMode.setOnClickListener {
+            val newState = !switchNavMode.isChecked
+            switchNavMode.isChecked = newState
+            viewModel.setNavigationMode(newState)
+        }
+
+        viewModel.navigationMode.observe(this) { mode ->
+            if (switchNavMode.isChecked != (mode == NavigationMode.TOUCH)) {
+                switchNavMode.isChecked = (mode == NavigationMode.TOUCH)
+            }
+        }
         val etSearch = navigationView.findViewById<EditText>(R.id.etSearch)
+
+        viewModel.showEmptyLessons.observe(this) { shouldShow ->
+            if (switchShowEmpty.isChecked != shouldShow) {
+                switchShowEmpty.isChecked = shouldShow
+            }
+        }
+        switchShowEmpty.setOnCheckedChangeListener { _, isChecked ->
+            viewModel.setShowEmptyLessons(isChecked)
+        }
+
+        switchNavMode.setOnCheckedChangeListener { _, isChecked ->
+            viewModel.setNavigationMode(isChecked)
+        }
+        viewModel.navigationMode.observe(this) { mode ->
+            // Устанавливаем состояние свитча без вызова setOnCheckedChangeListener
+            switchNavMode.isChecked = (mode == NavigationMode.TOUCH)
+        }
 
         pinnedAdapter = SearchAdapter(
             onItemClick = { selectTargetAndFind(it) },
@@ -216,16 +251,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun selectTargetAndFind(target: ScheduleTarget) {
-        swipeRefreshLayout.isRefreshing = true // Используем свойство класса
+        swipeRefreshLayout.isRefreshing = true
         viewModel.loadSchedule(target.person_id)
-        getSharedPreferences("schedule_prefs", MODE_PRIVATE).edit()
-            .putString("last_used_id", target.person_id)
-            .apply()
-
-        findViewById<NavigationView>(R.id.navigationView)
-            .findViewById<EditText>(R.id.etSearch).setText("")
-
-        drawerLayout.closeDrawer(GravityCompat.END) // Используем свойство класса
+        // Строки с SharedPreferences больше не нужны
+        // ...
+        drawerLayout.closeDrawer(GravityCompat.END)
     }
 
     private fun observeViewModel() {
@@ -302,6 +332,9 @@ class MainActivity : AppCompatActivity() {
             pbSearch.visibility = if (isInProgress) View.VISIBLE else View.GONE
         }
 
+        viewModel.navigationMode.observe(this) { mode ->
+            setupNavigationListeners(mode)
+        }
     }
 
     private fun updateScheduleData(scheduleItems: List<ScheduleItem>, tvNoLessons: TextView) {
@@ -339,6 +372,23 @@ class MainActivity : AppCompatActivity() {
                 searchFor(item.teacher)
                 dialog.dismiss()
             }
+            tvTeacher.setOnLongClickListener {
+                // 1. Формируем поисковый URL
+                val query = "${item.teacher} ЮФУ"
+                val url = "https://www.google.com/search?q=${Uri.encode(query)}"
+
+                // 2. Создаем Intent для открытия браузера
+                val intent = Intent(Intent.ACTION_VIEW)
+                intent.data = Uri.parse(url)
+
+                // 3. Запускаем браузер
+                startActivity(intent)
+
+                // 4. Закрываем диалог
+                dialog.dismiss()
+
+                true // Возвращаем true, чтобы показать, что долгое нажатие обработано
+            }
         }
 
         // Аудитория
@@ -370,4 +420,68 @@ class MainActivity : AppCompatActivity() {
         // Явно запускаем поиск в ViewModel
         viewModel.search(name)
     }
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupNavigationListeners(mode: NavigationMode) {
+        // Универсальный GestureDetector, который умеет делать ВСЁ
+        val gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+
+            // --- Долгое нажатие (работает всегда) ---
+            override fun onLongPress(e: MotionEvent) {
+                val childView = recyclerView.findChildViewUnder(e.x, e.y)
+                if (childView != null) {
+                    val position = recyclerView.getChildAdapterPosition(childView)
+                    if (position != RecyclerView.NO_POSITION) {
+                        val item = scheduleAdapter.currentList[position]
+                        if (item.subject != "Нет пары") {
+                            showLessonDetailsDialog(item)
+                        }
+                    }
+                }
+            }
+
+            // --- Тап по краю (работает только в режиме TOUCH) ---
+            override fun onSingleTapUp(e: MotionEvent): Boolean {
+                if (mode == NavigationMode.TOUCH) {
+                    val screenWidth = resources.displayMetrics.widthPixels
+                    if (e.x < screenWidth * 0.35) {
+                        viewModel.selectPreviousDay()
+                        return true
+                    }
+                    if (e.x > screenWidth * 0.65) {
+                        viewModel.selectNextDay()
+                        return true
+                    }
+                }
+                return false
+            }
+
+            // --- Свайп (работает только в режиме SWIPE) ---
+            override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+                if (mode == NavigationMode.SWIPE && e1 != null) {
+                    val diffX = e2.x - e1.x
+                    val diffY = e2.y - e1.y
+                    if (abs(diffX) > abs(diffY) * 1.5) {
+                        if (abs(diffX) > 100 && abs(velocityX) > 100) {
+                            if (diffX > 0) {
+                                viewModel.selectPreviousDay()
+                            } else {
+                                viewModel.selectNextDay()
+                            }
+                            return true
+                        }
+                    }
+                }
+                return false
+            }
+        })
+
+        // Применяем наш универсальный детектор к RecyclerView
+        recyclerView.setOnTouchListener { _, event ->
+            // Передаем событие в детектор, но не "поглощаем" его,
+            // чтобы скролл и SwipeRefreshLayout продолжали работать.
+            gestureDetector.onTouchEvent(event)
+            false
+        }
+    }
+
 }
