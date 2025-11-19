@@ -368,26 +368,27 @@ class MainActivity : AppCompatActivity() {
         tvTeacher.text = "🧑‍🏫 Преподаватель: ${item.teacher}"
         if (item.teacher != "не назначен") {
             tvTeacher.setTextColor(getColor(R.color.link_blue)) // Делаем синим
+
+            // Обычный клик - поиск внутри приложения
             tvTeacher.setOnClickListener {
                 searchFor(item.teacher)
                 dialog.dismiss()
             }
+
+            // [FIX 1.4.1] Восстанавливаем поиск в браузере
             tvTeacher.setOnLongClickListener {
-                // 1. Формируем поисковый URL
-                val query = "${item.teacher} ЮФУ"
-                val url = "https://www.google.com/search?q=${Uri.encode(query)}"
-
-                // 2. Создаем Intent для открытия браузера
-                val intent = Intent(Intent.ACTION_VIEW)
-                intent.data = Uri.parse(url)
-
-                // 3. Запускаем браузер
-                startActivity(intent)
-
-                // 4. Закрываем диалог
-                dialog.dismiss()
-
-                true // Возвращаем true, чтобы показать, что долгое нажатие обработано
+                try {
+                    val query = "${item.teacher} ЮФУ"
+                    val url = "https://www.google.com/search?q=${android.net.Uri.encode(query)}"
+                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
+                    intent.data = android.net.Uri.parse(url)
+                    startActivity(intent)
+                    dialog.dismiss()
+                } catch (e: Exception) {
+                    // На случай, если нет браузера (маловероятно, но безопасно)
+                    Toast.makeText(this, "Не удалось открыть браузер", Toast.LENGTH_SHORT).show()
+                }
+                true // Важно вернуть true
             }
         }
 
