@@ -1,20 +1,17 @@
 package com.fuck.modeus.ui
 
 import android.app.Application
-import android.util.Log
 import android.content.Context
+import android.content.Intent
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
-import com.fuck.modeus.data.CachedData
-import com.fuck.modeus.data.DayItem
-import com.fuck.modeus.data.ScheduleItem
-import com.fuck.modeus.data.ScheduleResponse
-import com.fuck.modeus.data.ScheduleTarget
-import com.fuck.modeus.data.WeekItem
+import com.fuck.modeus.data.*
 import com.fuck.modeus.network.RetrofitInstance
 import com.google.gson.Gson
+import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
@@ -25,14 +22,24 @@ import java.io.InputStreamReader
 import java.text.SimpleDateFormat
 import java.util.*
 
-enum class SwipeDirection {
-    LEFT, RIGHT, NONE // NONE для начальной загрузки
-}
+enum class SwipeDirection { LEFT, RIGHT, NONE }
 enum class NavigationMode { TOUCH, SWIPE }
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
-    // --- LiveData для Расписания ---
+    private val TAG = "FuckModeus_DEBUG"
+
+    // --- Константы семестров ---
+    private val AUTUMN_START_MONTH = Calendar.SEPTEMBER // Сентябрь (8)
+    private val AUTUMN_START_DAY = 1
+    private val AUTUMN_END_MONTH = Calendar.FEBRUARY // Февраль (1)
+    private val AUTUMN_END_DAY = 5
+
+    private val SPRING_START_MONTH = Calendar.FEBRUARY // Февраль (1)
+    private val SPRING_START_DAY = 7 // Весна начинается с 7 февраля
+    private val SPRING_END_MONTH = Calendar.AUGUST // Август (7)
+    private val SPRING_END_DAY = 31
+
     private val timeSlots = mapOf(
         "08:00" to "09:35", "09:50" to "11:25", "11:55" to "13:30",
         "13:45" to "15:20", "15:50" to "17:25", "17:35" to "19:10",
@@ -47,7 +54,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _lastUpdateTime = MutableLiveData<String>()
     val lastUpdateTime: LiveData<String> = _lastUpdateTime
 
-    // --- LiveData для Поиска ---
+    // Search
     private var allTargets = listOf<ScheduleTarget>()
     private val _searchResults = MutableLiveData<List<ScheduleTarget>>()
     val searchResults: LiveData<List<ScheduleTarget>> = _searchResults
@@ -59,108 +66,294 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _searchInProgress = MutableLiveData<Boolean>()
     val searchInProgress: LiveData<Boolean> = _searchInProgress
 
-    // --- LiveData для Дат ---
+    // Dates
     private val _weeks = MutableLiveData<List<WeekItem>>()
     val weeks: LiveData<List<WeekItem>> = _weeks
     private val _days = MutableLiveData<List<DayItem>>()
     val days: LiveData<List<DayItem>> = _days
     private var selectedDate: Date = Calendar.getInstance().time
-    // Новая LiveData для управления анимацией
+
+    // UX
     private val _swipeDirection = MutableLiveData(SwipeDirection.NONE)
     val swipeDirection: LiveData<SwipeDirection> = _swipeDirection
     private val _navigationMode = MutableLiveData(NavigationMode.TOUCH)
     val navigationMode: LiveData<NavigationMode> = _navigationMode
-    private val _showEmptyLessons = MutableLiveData(true) // По умолчанию включено
+    private val _showEmptyLessons = MutableLiveData(true)
     val showEmptyLessons: LiveData<Boolean> = _showEmptyLessons
 
-    private val cacheFileName = "schedule_cache.json"
-    private val sharedPreferences =
-        application.getSharedPreferences("schedule_prefs", Application.MODE_PRIVATE)
+    private val cacheFileName = "schedule_cache_v2.json"
+    private val sharedPreferences = application.getSharedPreferences("schedule_prefs", Application.MODE_PRIVATE)
 
     init {
+        Log.d(TAG, "ViewModel: init")
         loadAllIds()
         loadNavigationMode()
         loadShowEmptyLessonsMode()
     }
 
-    private fun loadShowEmptyLessonsMode() {
-        val shouldShow = sharedPreferences.getBoolean("show_empty_lessons", true) // По умолчанию true
-        _showEmptyLessons.postValue(shouldShow)
-    }
-
+    // --- ПУБЛИЧНЫЕ МЕТОДЫ НАСТРОЕК ---
 
     fun setShowEmptyLessons(shouldShow: Boolean) {
-        // Проверяем, изменилось ли значение, чтобы избежать лишней работы
         if (_showEmptyLessons.value == shouldShow) return
-
         _showEmptyLessons.value = shouldShow
         sharedPreferences.edit().putBoolean("show_empty_lessons", shouldShow).apply()
-
-        // Явно перезапускаем фильтрацию с уже обновленным значением
         filterScheduleForSelectedDate()
     }
-    private fun loadNavigationMode() {
-        // Загружаем сохраненное значение, по умолчанию - TOUCH
-        val mode = sharedPreferences.getString("nav_mode", NavigationMode.TOUCH.name)
-        _navigationMode.postValue(NavigationMode.valueOf(mode ?: NavigationMode.TOUCH.name))
-    }
+
     fun setNavigationMode(isTouchMode: Boolean) {
         val newMode = if (isTouchMode) NavigationMode.TOUCH else NavigationMode.SWIPE
         _navigationMode.postValue(newMode)
-        sharedPreferences.edit().putString("nav_mode", newMode.name).apply()
+        val modeName = if (isTouchMode) NavigationMode.TOUCH.name else NavigationMode.SWIPE.name
+        sharedPreferences.edit().putString("nav_mode", modeName).apply()
     }
-    // --- Логика Расписания ---
+
+    private fun loadShowEmptyLessonsMode() {
+        val shouldShow = sharedPreferences.getBoolean("show_empty_lessons", true)
+        _showEmptyLessons.postValue(shouldShow)
+    }
+
+    private fun loadNavigationMode() {
+        val modeName = sharedPreferences.getString("nav_mode", NavigationMode.TOUCH.name)
+        val mode = try {
+            NavigationMode.valueOf(modeName ?: NavigationMode.TOUCH.name)
+        } catch (e: Exception) {
+            NavigationMode.TOUCH
+        }
+        _navigationMode.postValue(mode)
+    }
+
+    // --- ЛОГИКА СЕМЕСТРОВ ---
+
+    data class SemesterBounds(
+        val apiMinDate: String,
+        val apiMaxDate: String,
+        val semesterStartDate: Date,
+        val description: String
+    )
+
+    private fun getSemesterBounds(): SemesterBounds {
+        val cal = Calendar.getInstance()
+        val currentYear = cal.get(Calendar.YEAR)
+        val currentMonth = cal.get(Calendar.MONTH)
+        val currentDay = cal.get(Calendar.DAY_OF_MONTH)
+
+        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.getDefault())
+        val startCal = Calendar.getInstance()
+        val endCal = Calendar.getInstance()
+        val desc: String
+
+        val isAutumnCurrentYear = currentMonth >= Calendar.AUGUST
+        val isAutumnNextYearPart = (currentMonth == Calendar.JANUARY) || (currentMonth == Calendar.FEBRUARY && currentDay <= 6)
+
+        if (isAutumnCurrentYear || isAutumnNextYearPart) {
+            desc = "Осень"
+            val startYear = if (isAutumnNextYearPart) currentYear - 1 else currentYear
+            startCal.set(startYear, AUTUMN_START_MONTH, AUTUMN_START_DAY, 0, 0, 0)
+            endCal.set(startYear + 1, AUTUMN_END_MONTH, AUTUMN_END_DAY, 23, 59, 59)
+        } else {
+            desc = "Весна"
+            startCal.set(currentYear, SPRING_START_MONTH, SPRING_START_DAY, 0, 0, 0)
+            endCal.set(currentYear, SPRING_END_MONTH, SPRING_END_DAY, 23, 59, 59)
+        }
+
+        return SemesterBounds(
+            apiMinDate = sdf.format(startCal.time),
+            apiMaxDate = sdf.format(endCal.time),
+            semesterStartDate = startCal.time,
+            description = "$desc ${startCal.get(Calendar.YEAR)}"
+        )
+    }
+
+    // --- ЗАГРУЗКА РАСПИСАНИЯ ---
+
     fun loadSchedule(personId: String) {
+        Log.d(TAG, "ViewModel: loadSchedule called for ID: $personId")
+
+        val apiSource = ApiSettings.getApiSource(getApplication())
+        Log.d(TAG, "ViewModel: Selected API Source: $apiSource")
+        if (apiSource == ApiSource.SFEDU) {
+            val token = TokenManager.getToken(getApplication())
+            if (token == null) {
+                _error.postValue("Требуется вход через Microsoft")
+                openLoginActivity(personId)
+                return
+            }
+        }
+
         viewModelScope.launch {
             try {
+                val bounds = getSemesterBounds()
+                Log.d(TAG, "ViewModel: Семестр: ${bounds.description} (${bounds.apiMinDate} - ${bounds.apiMaxDate})")
+
                 val requestBody = JsonObject().apply {
-                    addProperty("size", 10000)
-                    addProperty("timeMin", "2024-08-31T21:00:00.000Z")
-                    addProperty("timeMax", "2026-07-06T20:59:59.999Z")
-                    add("attendeePersonId", Gson().toJsonTree(listOf(personId)))
+                    addProperty("size", 3000)
+                    addProperty("timeMin", bounds.apiMinDate)
+                    addProperty("timeMax", bounds.apiMaxDate)
+                    val ids = JsonArray()
+                    ids.add(personId)
+                    add("attendeePersonId", ids)
                 }
 
-                // --- ИСПОЛЬЗУЕМ Retrofit для получения СТРОКИ, а не готового объекта ---
-                val responseString = RetrofitInstance.api.getScheduleAsString(requestBody).string()
+                val api = RetrofitInstance.getApi(getApplication())
+                val responseBody = if (apiSource == ApiSource.SFEDU) {
+                    api.getScheduleSfedu(requestBody)
+                } else {
+                    // RDCenter может требовать старый формат (просто size, min, max без ID)
+                    // Но обычно они совпадают. Попробуем отослать тот же JSON.
+                    api.getScheduleRdCenter(requestBody)
+                }
+                val responseString = responseBody.string()
 
-                // --- ПРОВЕРЯЕМ, НЕ ПУСТАЯ ЛИ СТРОКА ---
+                Log.d(TAG, "ViewModel: Ответ получен. Длина: ${responseString.length}")
+
                 if (responseString.isNotBlank()) {
-                    // Парсим строку в наш объект ScheduleResponse
                     val scheduleResponse = Gson().fromJson(responseString, ScheduleResponse::class.java)
+                    val scheduleItems = parseResponseV2(scheduleResponse)
+                    Log.d(TAG, "ViewModel: Распаршено пар: ${scheduleItems.size}")
 
-                    val scheduleItems = parseResponse(scheduleResponse)
                     fullSchedule = scheduleItems.sortedBy { it.fullStartDate }
 
                     val targetName = allTargets.find { it.person_id == personId }?.name ?: "Расписание"
                     val currentTime = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.getDefault()).format(Date())
 
-                    // Создаем объект для кеширования
                     val dataToCache = CachedData(
                         targetId = personId,
                         targetName = targetName,
                         lastUpdateTime = currentTime,
-                        scheduleJsonResponse = responseString // Сохраняем исходную строку
+                        scheduleJsonResponse = responseString
                     )
-                    saveDataToFile(dataToCache) // Сохраняем в файл
+                    saveDataToFile(dataToCache)
 
-                    // Обновляем UI
                     _scheduleTitle.postValue(targetName)
                     _lastUpdateTime.postValue("Последнее обновление: $currentTime")
                     processNewScheduleData()
                 } else {
+                    Log.e(TAG, "ViewModel: Ответ сервера пустой")
                     _error.postValue("Ошибка: получен пустой ответ от сервера.")
                 }
+            } catch (e: retrofit2.HttpException) {
+                if (e.code() == 401) {
+                    Log.w(TAG, "ViewModel: 401 Unauthorized. Сбрасываем токен.")
+                    TokenManager.clearToken(getApplication())
+                    _error.postValue("Сессия истекла. Пожалуйста, войдите снова.")
+                    openLoginActivity(personId)
+                } else {
+                    _error.postValue("Ошибка сервера: ${e.code()}")
+                    loadDataFromFile()
+                }
             } catch (e: Exception) {
+                Log.e(TAG, "ViewModel: Ошибка сети/парсинга", e)
                 _error.postValue("Ошибка сети: ${e.message}")
-                // В случае ошибки сети, пытаемся загрузить старые данные из файла
                 loadDataFromFile()
             }
         }
     }
 
-    fun loadInitialSchedule() {
-        loadDataFromFile()
+    // --- ОБНОВЛЕНИЕ (SWIPE REFRESH) ---
+
+    fun refreshSchedule() {
+        Log.d(TAG, "ViewModel: refreshSchedule called")
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val fileInputStream = getApplication<Application>().openFileInput(cacheFileName)
+                val jsonString = fileInputStream.reader().readText()
+                fileInputStream.close()
+                val cachedData = Gson().fromJson(jsonString, CachedData::class.java)
+
+                // Вызываем загрузку с ID из кеша
+                loadSchedule(cachedData.targetId)
+            } catch (e: Exception) {
+                Log.e(TAG, "ViewModel: Не могу обновить: кеш пуст или ошибка чтения", e)
+                _error.postValue("Сначала выберите расписание в поиске")
+            }
+        }
     }
+
+    // --- ГЕНЕРАЦИЯ НЕДЕЛЬ (ИСПРАВЛЕНО) ---
+
+    private fun generateWeeks() {
+        if (fullSchedule.isEmpty()) {
+            _weeks.postValue(emptyList())
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.Default) {
+            val bounds = getSemesterBounds()
+            val semesterStartDate = bounds.semesterStartDate
+
+            // 1. Находим дату САМОЙ ПОСЛЕДНЕЙ ПАРЫ (в миллисекундах)
+            val maxLessonTime = fullSchedule.maxOfOrNull { it.fullStartDate } ?: System.currentTimeMillis()
+
+            // 2. Вычисляем границу цикла (конец недели, в которой эта последняя пара)
+            val limitCal = Calendar.getInstance().apply { timeInMillis = maxLessonTime }
+            // Устанавливаем на Воскресенье
+            limitCal.set(Calendar.DAY_OF_WEEK, Calendar.SUNDAY)
+            // Если из-за особенностей Calendar API (воскресенье=1) мы ушли назад во времени - добавляем 7 дней
+            if (limitCal.timeInMillis < maxLessonTime) {
+                limitCal.add(Calendar.DAY_OF_MONTH, 7)
+            }
+            // Ставим конец дня, чтобы сравнение .before() сработало корректно
+            limitCal.set(Calendar.HOUR_OF_DAY, 23)
+            limitCal.set(Calendar.MINUTE, 59)
+
+            val weekList = mutableListOf<WeekItem>()
+
+            // Календарь для итерации (начинаем с начала семестра)
+            val weekCalendar = Calendar.getInstance().apply {
+                time = semesterStartDate
+                set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+            }
+
+            if (weekCalendar.time.after(semesterStartDate)) {
+                weekCalendar.add(Calendar.DAY_OF_MONTH, -7)
+            }
+
+            var weekNumber = 1
+            val dateFormat = SimpleDateFormat("dd", Locale("ru"))
+            val today = Calendar.getInstance().time
+
+            // 3. Цикл работает, пока начало недели меньше предельной даты (последней пары)
+            while (weekCalendar.time.before(limitCal.time)) {
+                val startDate = weekCalendar.time
+                val endWeekCal = Calendar.getInstance().apply { time = startDate; add(Calendar.DAY_OF_MONTH, 6) }
+                val endDate = endWeekCal.time
+
+                weekList.add(
+                    WeekItem(
+                        weekNumber = weekNumber,
+                        startDate = startDate,
+                        endDate = endDate,
+                        displayableString = "$weekNumber неделя (${dateFormat.format(startDate)}-${dateFormat.format(endDate)})",
+                        isSelected = today in startDate..endDate
+                    )
+                )
+
+                weekNumber++
+                weekCalendar.add(Calendar.DAY_OF_MONTH, 7)
+            }
+
+            // Выбор активной недели, если ничего не выбрано
+            if (weekList.none { it.isSelected }) {
+                if (today.after(weekList.last().endDate)) weekList.last().isSelected = true
+                else weekList.first().isSelected = true
+            }
+
+            _weeks.postValue(weekList)
+        }
+    }
+
+    // --- ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ---
+
+    fun loadInitialSchedule() { loadDataFromFile() }
+
+    private fun openLoginActivity(personId: String? = null) {
+        val context = getApplication<Application>()
+        val intent = Intent(context, LoginActivity::class.java)
+        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        if (personId != null) intent.putExtra("TARGET_ID", personId)
+        context.startActivity(intent)
+    }
+
     private fun saveDataToFile(cachedData: CachedData) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -168,9 +361,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val fileOutputStream = getApplication<Application>().openFileOutput(cacheFileName, Context.MODE_PRIVATE)
                 fileOutputStream.write(jsonString.toByteArray())
                 fileOutputStream.close()
-            } catch (e: Exception) {
-                Log.e("ViewModel", "Ошибка сохранения кеша", e)
-            }
+                Log.d(TAG, "ViewModel: Кеш успешно сохранен")
+            } catch (e: Exception) { Log.e(TAG, "Error saving cache", e) }
         }
     }
 
@@ -180,139 +372,80 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val fileInputStream = getApplication<Application>().openFileInput(cacheFileName)
                 val jsonString = fileInputStream.reader().readText()
                 fileInputStream.close()
-
                 val cachedData = Gson().fromJson(jsonString, CachedData::class.java)
-
-                // Парсим JSON из кеша
                 val scheduleResponse = Gson().fromJson(cachedData.scheduleJsonResponse, ScheduleResponse::class.java)
-                val scheduleItems = parseResponse(scheduleResponse)
+                val scheduleItems = parseResponseV2(scheduleResponse)
                 fullSchedule = scheduleItems.sortedBy { it.fullStartDate }
-
-                // Обновляем UI из кеша
                 _scheduleTitle.postValue(cachedData.targetName)
                 _lastUpdateTime.postValue("Последнее обновление: ${cachedData.lastUpdateTime}")
                 processNewScheduleData()
-
-            } catch (e: Exception) {
-                Log.e("ViewModel", "Файл кеша не найден или поврежден", e)
-                _scheduleTitle.postValue("Расписание не загружено")
-
-                // ДОБАВЛЯЕМ ОПОВЕЩЕНИЕ ДЛЯ ПОЛЬЗОВАТЕЛЯ
-                _error.postValue("Сохраненное расписание не найдено. Выберите объект для поиска в меню.")
-            }
+                Log.d(TAG, "ViewModel: Данные загружены из кеша")
+            } catch (e: Exception) { Log.e(TAG, "Cache error", e) }
         }
     }
-    private fun processNewScheduleData() {
-        // Устанавливаем сегодняшний день как выбранный по умолчанию
-        selectDay(DayItem(Date(), "", "", true), isInitial = true)
-        // Генерируем недели (пока пустая функция)
-        generateWeeks()
-    }
 
-    private fun parseResponse(response: ScheduleResponse): List<ScheduleItem> {
-        val embedded = response.embedded
+    private fun parseResponseV2(response: ScheduleResponse): List<ScheduleItem> {
+        val embedded = response.embedded ?: return emptyList()
         val scheduleItems = mutableListOf<ScheduleItem>()
-
-        // Создаем карты для быстрого доступа
-        val personsMap = embedded.persons.associateBy { it.id }
-        val roomsMap = embedded.rooms.associateBy { it.id }
-        val courseUnitRealizationsMap = embedded.courseUnitRealizations.associateBy { it.id }
-        val cycleRealizationsMap = embedded.cycleRealizations.associateBy { it.id }
-        val eventTeamsMap = embedded.eventTeams.associateBy { it.eventId }
-        val eventLocationsMap = embedded.eventLocations.associateBy { it.eventId }
-
-        val eventToPersonIds = mutableMapOf<String, MutableList<String>>()
-        embedded.eventAttendees.forEach { attendee ->
-            val eventId = attendee._links.event?.href?.substring(1)
-            val personId = attendee._links.person?.href?.substring(1)
-            if (eventId != null && personId != null) {
-                eventToPersonIds.getOrPut(eventId) { mutableListOf() }.add(personId)
+        val personsMap = embedded.persons?.associateBy { "/${it.id}" } ?: emptyMap()
+        val roomsMap = embedded.rooms?.associateBy { "/${it.id}" } ?: emptyMap()
+        val coursesMap = embedded.courseUnits?.associateBy { "/${it.id}" } ?: emptyMap()
+        val cyclesMap = embedded.cycleRealizations?.associateBy { "/${it.id}" } ?: emptyMap()
+        val eventTeachers = mutableMapOf<String, MutableList<String>>()
+        embedded.eventAttendees?.forEach { att ->
+            val eventHref = att._links.event.href
+            val personHref = att._links.person.href
+            val eventId = eventHref.substringAfterLast("/")
+            personsMap[personHref]?.let { person ->
+                eventTeachers.getOrPut(eventId) { mutableListOf() }.add(person.fullName)
             }
         }
-
-        val eventToRoomId = mutableMapOf<String, String>()
-        embedded.eventRooms.forEach { eventRoom ->
-            val eventId = eventRoom._links.event?.href?.substring(1)
-            val roomHref = eventRoom._links.room?.href
-            if (eventId != null && roomHref != null) {
-                eventToRoomId[eventId] = roomHref.split("/").last()
-            }
-        }
-
-        // Этот парсер ожидает часовой пояс (XXX)
-        val inputFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US)
+        val eventLocationsMap = embedded.eventLocations?.associateBy { it.eventId } ?: emptyMap()
+        val eventRoomsMap = embedded.eventRooms?.associateBy { "/${it.id}" } ?: emptyMap()
+        val eventTeamsMap = embedded.eventTeams?.associateBy { it.eventId } ?: emptyMap()
+        val inputFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.getDefault())
         val timeFormat = SimpleDateFormat("HH:mm", Locale("ru"))
         val dateFormat = SimpleDateFormat("d MMMM", Locale("ru"))
 
-        for (event in embedded.events) {
-            val teacherNames = eventToPersonIds[event.id]
-                ?.mapNotNull { personId -> personsMap[personId]?.fullName }
-                ?.joinToString(separator = "\n") ?: "не назначен"
-
-            val roomName = eventToRoomId[event.id]
-                ?.let { roomId -> roomsMap[roomId]?.name } ?: "не назначена/онлайн"
-
-            val courseUnitId = event.links.courseUnitRealization?.href?.substring(1)
-            val moduleShortName = courseUnitId?.let { courseUnitRealizationsMap[it]?.nameShort }
-            val moduleFullName = courseUnitId?.let { courseUnitRealizationsMap[it]?.name }
-
-            val cycleId = event.links.cycleRealization?.href?.substring(1)
-            val groupCode = cycleId?.let { cycleRealizationsMap[it]?.code }
-
-            val teamSize = eventTeamsMap[event.id]?.size
-            val locationType = if (eventLocationsMap[event.id]?.customLocation == "Online") "Online" else "Очно"
-
-            // ИСПОЛЬЗУЕМ ПОЛЯ С ЧАСОВЫМ ПОЯСОМ: event.start и event.end
-            val startDate = inputFormat.parse(event.start)
-            val endDate = inputFormat.parse(event.end) // <-- ИСПРАВЛЕНИЕ ЗДЕСЬ
-
-            val startTimeStr = startDate?.let { timeFormat.format(it) } ?: ""
-            val endTimeStr = endDate?.let { timeFormat.format(it) } ?: "" // <-- И ИСПРАВЛЕНИЕ ЗДЕСЬ
-            val dateStr = startDate?.let { dateFormat.format(it) } ?: ""
-
-            val lessonType = when (event.type) {
-                "LECT" -> "Лекция"
-                "SEMI" -> "Практика"
-                "LAB" -> "Лабораторная"
-                "EXAM" -> "Экзамен"
-                else -> event.type
+        embedded.events?.forEach { event ->
+            val teacherStr = eventTeachers[event.id]?.joinToString("\n") ?: "не назначен"
+            var roomStr = "не назначена"
+            var locationType = "Очно"
+            val loc = eventLocationsMap[event.id]
+            if (loc != null) {
+                if (loc.customLocation == "Online") {
+                    roomStr = "Online"; locationType = "Online"
+                } else {
+                    val evRoomHref = loc._links.eventRooms?.href
+                    if (evRoomHref != null) {
+                        val evRoom = eventRoomsMap[evRoomHref]
+                        val roomHref = evRoom?._links?.room?.href
+                        if (roomHref != null) roomStr = roomsMap[roomHref]?.name ?: "неизвестно"
+                    }
+                }
             }
-
-            scheduleItems.add(
-                ScheduleItem(
-                    id = event.id,
-                    fullStartDate = startDate?.time ?: 0L,
-                    subject = event.name,
-                    moduleShortName = moduleShortName,
-                    startTime = startTimeStr,
-                    endTime = endTimeStr,
-                    date = dateStr,
-                    teacher = teacherNames,
-                    room = roomName,
-                    type = lessonType,
-                    moduleFullName = moduleFullName,
-                    groupCode = groupCode,
-                    teamSize = teamSize,
-                    locationType = locationType
-                )
-            )
+            val courseRef = event.links.courseUnit?.href
+            val moduleShort = coursesMap[courseRef]?.nameShort
+            val moduleFull = coursesMap[courseRef]?.name
+            val cycleRef = event.links.cycleRealization?.href
+            val groupCode = cyclesMap[cycleRef]?.code
+            val teamSize = eventTeamsMap[event.id]?.size
+            try {
+                val startDate = inputFormat.parse(event.start)
+                val endDate = inputFormat.parse(event.end)
+                if (startDate != null && endDate != null) {
+                    val humanType = EventTypeMapper.getHumanReadableType(event.typeId)
+                    scheduleItems.add(ScheduleItem(event.id, startDate.time, event.name, moduleShort, timeFormat.format(startDate), timeFormat.format(endDate), dateFormat.format(startDate), teacherStr, roomStr, humanType, moduleFull, groupCode, teamSize, locationType))
+                }
+            } catch (e: Exception) { }
         }
         return scheduleItems
     }
 
-    private fun saveScheduleToPrefs(schedule: List<ScheduleItem>) {
-        val json = Gson().toJson(schedule)
-        sharedPreferences.edit().putString("schedule_data", json).apply()
+    private fun processNewScheduleData() {
+        selectDay(DayItem(Date(), "", "", true), isInitial = true)
+        generateWeeks()
     }
-
-    private fun updateLastUpdateTime() {
-        val sdf = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.getDefault())
-        val currentTime = sdf.format(Date())
-        sharedPreferences.edit().putString("last_update_time", currentTime).apply()
-        _lastUpdateTime.postValue("Последнее обновление: $currentTime")
-    }
-
-    // --- Логика Поиска и Закрепления ---
 
     private fun loadAllIds() {
         viewModelScope.launch(Dispatchers.IO) {
@@ -322,34 +455,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val type = object : TypeToken<List<ScheduleTarget>>() {}.type
                 val targets: List<ScheduleTarget> = Gson().fromJson(reader, type)
                 allTargets = targets
-                loadPinnedStatus() // Загружаем статусы после загрузки всех ID
-            } catch (e: Exception) {
-                Log.e("ViewModel", "Ошибка чтения allid.txt", e)
-                _error.postValue("Критическая ошибка: Не удалось прочитать allid.txt. ${e.message}")
-            }
+                loadPinnedStatus()
+            } catch (e: Exception) { }
         }
     }
 
     fun search(query: String) {
         searchJob?.cancel()
-        if (query.isBlank() || query.length < 2) { // Будем искать от 2-х символов
+        if (query.isBlank() || query.length < 2) {
             _searchResults.postValue(emptyList())
             return
         }
-
         searchJob = viewModelScope.launch(Dispatchers.Default) {
-            _searchInProgress.postValue(true) // Показываем ProgressBar
-            delay(300L) // Ждем 300 мс
-
-            val (startsWith, contains) = allTargets.filter {
-                it.name.contains(query, ignoreCase = true)
-            }.partition {
-                it.name.startsWith(query, ignoreCase = true)
-            }
-
-            // Берем только первые 50 результатов
+            _searchInProgress.postValue(true)
+            delay(300L)
+            val (startsWith, contains) = allTargets.filter { it.name.contains(query, ignoreCase = true) }.partition { it.name.startsWith(query, ignoreCase = true) }
             _searchResults.postValue((startsWith + contains).take(50))
-            _searchInProgress.postValue(false) // Скрываем ProgressBar
+            _searchInProgress.postValue(false)
         }
     }
 
@@ -363,8 +485,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         target.isPinned = !target.isPinned
         savePinnedStatus()
         updatePinnedList()
-
-        // Обновляем результаты поиска, чтобы иконка там тоже изменилась
         _searchResults.value?.let { _searchResults.postValue(it.toList()) }
     }
 
@@ -376,239 +496,81 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun updatePinnedList() {
         _pinnedTargets.postValue(allTargets.filter { it.isPinned })
     }
+
     fun selectWeek(week: WeekItem) {
-        // Выделяем выбранную неделю
         _weeks.value?.let { currentWeeks ->
             val updatedWeeks = currentWeeks.map { it.copy(isSelected = it == week) }
             _weeks.postValue(updatedWeeks)
         }
-
-        // Выбираем понедельник этой недели
         val mondayOfWeek = DayItem(week.startDate, "", "", true)
         selectDay(mondayOfWeek)
     }
+
     fun selectDay(day: DayItem, isInitial: Boolean = false) {
         selectedDate = day.date
         val calendar = Calendar.getInstance().apply { time = day.date }
         val dayOfWeekInCalendar = calendar.get(Calendar.DAY_OF_WEEK)
-        // Корректируем, чтобы неделя начиналась с понедельника
         val firstDayOfWeek = if (dayOfWeekInCalendar == Calendar.SUNDAY) Calendar.MONDAY - 7 else Calendar.MONDAY
         calendar.set(Calendar.DAY_OF_WEEK, firstDayOfWeek)
-
         val newDays = (0..6).map {
             val date = calendar.time
-            DayItem(
-                date = date,
-                dayOfWeek = SimpleDateFormat("EE", Locale("ru")).format(date).capitalize(Locale.ROOT),
-                dayOfMonth = SimpleDateFormat("d", Locale("ru")).format(date),
-                isSelected = isSameDay(date, selectedDate)
-            ).also {
-                calendar.add(Calendar.DAY_OF_MONTH, 1)
-            }
+            DayItem(date, SimpleDateFormat("EE", Locale("ru")).format(date).capitalize(Locale.ROOT), SimpleDateFormat("d", Locale("ru")).format(date), isSameDay(date, selectedDate)).also { calendar.add(Calendar.DAY_OF_MONTH, 1) }
         }
         _days.postValue(newDays)
-        // --- ФИНАЛЬНЫЙ БЛОК ДЛЯ ОБНОВЛЕНИЯ НЕДЕЛЬ ---
         filterScheduleForSelectedDate()
-
-        if (!isInitial) {
-            _swipeDirection.postValue(SwipeDirection.NONE)
-        }
+        if (!isInitial) _swipeDirection.postValue(SwipeDirection.NONE)
     }
+
     private fun isSameDay(date1: Date, date2: Date): Boolean {
-        // ... (этот метод без изменений)
         val cal1 = Calendar.getInstance().apply { time = date1 }
         val cal2 = Calendar.getInstance().apply { time = date2 }
-        return cal1.get(Calendar.YEAR) == cal2.get(Calendar.YEAR) &&
-                cal1.get(Calendar.DAY_OF_YEAR) == cal2.get(Calendar.DAY_OF_YEAR)
+        return cal1.get(Calendar.YEAR) == cal2.get(Calendar.YEAR) && cal1.get(Calendar.DAY_OF_YEAR) == cal2.get(Calendar.DAY_OF_YEAR)
     }
+
     private fun filterScheduleForSelectedDate() {
         val lessonsForDay = fullSchedule.filter { isSameDay(Date(it.fullStartDate), selectedDate) }
-
-        if (_showEmptyLessons.value == false) {
-            _filteredSchedule.postValue(lessonsForDay)
-            return
-        }
-
-        if (lessonsForDay.isEmpty()) {
-            _filteredSchedule.postValue(emptyList())
-            return
-        }
-
+        if (_showEmptyLessons.value == false) { _filteredSchedule.postValue(lessonsForDay); return }
+        if (lessonsForDay.isEmpty()) { _filteredSchedule.postValue(emptyList()); return }
         val lessonsMap = lessonsForDay.associateBy { it.startTime }
         var pairCounter = 1
-
         val fullDaySchedule = timeSlots.map { (startTime, endTime) ->
             val pairName = "${pairCounter++} пара"
             lessonsMap[startTime] ?: createEmptyLesson(startTime, endTime, pairName)
         }
-
         _filteredSchedule.postValue(fullDaySchedule)
     }
+
     private fun createEmptyLesson(startTime: String, endTime: String, pairName: String): ScheduleItem {
-        return ScheduleItem(
-            id = UUID.randomUUID().toString(),
-            fullStartDate = 0L,
-            subject = "Нет пары",
-            moduleShortName = pairName, // "1 пара", "2 пара"...
-            startTime = startTime,
-            endTime = endTime, // <-- ТЕПЕРЬ ПЕРЕДАЕМ ВРЕМЯ ОКОНЧАНИЯ
-            date = "",
-            teacher = "",
-            room = "",
-            type = "",
-            moduleFullName = null,
-            groupCode = null,
-            teamSize = null,
-            locationType = ""
-        )
+        return ScheduleItem(UUID.randomUUID().toString(), 0L, "Нет пары", pairName, startTime, endTime, "", "", "", "", null, null, null, "")
     }
-    private fun generateWeeks() {
-        if (fullSchedule.isEmpty()) {
-            _weeks.postValue(emptyList())
-            return
-        }
 
-        viewModelScope.launch(Dispatchers.Default) {
-            val calendar = Calendar.getInstance()
-            val today = calendar.time
-
-            // Определяем дату начала первого семестра (1 сентября текущего или прошлого года)
-            calendar.time = today
-            val currentMonth = calendar.get(Calendar.MONTH)
-            val currentYear = calendar.get(Calendar.YEAR)
-
-            val firstSemesterStartCalendar = Calendar.getInstance().apply {
-                set(Calendar.MONTH, Calendar.SEPTEMBER)
-                set(Calendar.DAY_OF_MONTH, 1)
-                if (currentMonth < Calendar.SEPTEMBER) { // Если сейчас январь-август, то учебный год начался в прошлом году
-                    set(Calendar.YEAR, currentYear - 1)
-                } else {
-                    set(Calendar.YEAR, currentYear)
-                }
-            }
-
-            // Определяем дату начала второго семестра (8 февраля)
-            val secondSemesterStartCalendar = Calendar.getInstance().apply {
-                set(Calendar.YEAR, firstSemesterStartCalendar.get(Calendar.YEAR))
-                if (today.after(firstSemesterStartCalendar.time)) {
-                    // Если мы после 1 сентября, то второй семестр будет в следующем году
-                    set(Calendar.YEAR, firstSemesterStartCalendar.get(Calendar.YEAR) + 1)
-                }
-                set(Calendar.MONTH, Calendar.FEBRUARY)
-                set(Calendar.DAY_OF_MONTH, 8)
-            }
-
-            // Определяем, в каком мы семестре и дату его начала
-            val semesterStartDate = if (today.after(secondSemesterStartCalendar.time)) {
-                secondSemesterStartCalendar.time
-            } else {
-                firstSemesterStartCalendar.time
-            }
-
-            // Находим первую и последнюю пару в расписании, чтобы определить диапазон недель
-            val firstLessonDate = Date(fullSchedule.minOf { it.fullStartDate })
-            val lastLessonDate = Date(fullSchedule.maxOf { it.fullStartDate })
-
-            val weekList = mutableListOf<WeekItem>()
-            val weekCalendar = Calendar.getInstance().apply { time = semesterStartDate }
-            var weekNumber = 1
-
-            val dateFormat = SimpleDateFormat("dd", Locale("ru"))
-
-            while (weekCalendar.time.before(lastLessonDate) || isSameDay(weekCalendar.time, lastLessonDate)) {
-                // --- НАЧАЛО НОВОГО БЛОКА ---
-
-                // Находим понедельник текущей недели
-                weekCalendar.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
-                val startDate = weekCalendar.time
-
-                // Находим воскресенье ЭТОЙ ЖЕ недели
-                weekCalendar.set(Calendar.DAY_OF_WEEK, Calendar.SUNDAY)
-                // ВАЖНО: если понедельник был позже воскресенья (например, 30 декабря и 5 января),
-                // значит, воскресенье относится к следующей неделе, нужно откатиться на 7 дней.
-                if (startDate.after(weekCalendar.time)) {
-                    weekCalendar.add(Calendar.DAY_OF_MONTH, -7)
-                }
-                val endDate = weekCalendar.time
-
-                // Пропускаем недели, которые были до начала реального расписания
-                if (endDate.before(firstLessonDate)) {
-                    weekCalendar.add(Calendar.DAY_OF_MONTH, 1) // Переходим к следующему дню, чтобы начать новую неделю
-                    continue
-                }
-
-                weekList.add(
-                    WeekItem(
-                        weekNumber = weekNumber,
-                        startDate = startDate,
-                        endDate = endDate,
-                        displayableString = "$weekNumber неделя (${dateFormat.format(startDate)}-${dateFormat.format(endDate)})",
-                        isSelected = today in startDate..endDate
-                    )
-                )
-
-                weekNumber++
-                weekCalendar.add(Calendar.DAY_OF_MONTH, 1) // Переходим к следующему дню, чтобы начать новую неделю
-
-                // --- КОНЕЦ НОВОГО БЛОКА ---
-            }
-            _weeks.postValue(weekList)
-        }
-    }
     fun selectNextDay() {
         _swipeDirection.value = SwipeDirection.LEFT
         val calendar = Calendar.getInstance().apply { time = selectedDate }
-
-        // ПРОВЕРКА: Если текущий день - ВОСКРЕСЕНЬЕ
         if (calendar.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY) {
-            // Находим индекс текущей выбранной недели
             val currentWeekIndex = _weeks.value?.indexOfFirst { it.isSelected } ?: -1
             if (currentWeekIndex != -1 && currentWeekIndex + 1 < (_weeks.value?.size ?: 0)) {
-                // Выбираем СЛЕДУЮЩУЮ неделю
-                selectWeek(_weeks.value!![currentWeekIndex + 1])
-                return // Выходим, чтобы не вызывать selectDay дважды
+                selectWeek(_weeks.value!![currentWeekIndex + 1]); return
             }
         }
-
-        // Стандартная логика для всех остальных дней
         calendar.add(Calendar.DAY_OF_MONTH, 1)
         selectDay(DayItem(calendar.time, "", "", false))
     }
 
-
     fun selectPreviousDay() {
         _swipeDirection.value = SwipeDirection.RIGHT
         val calendar = Calendar.getInstance().apply { time = selectedDate }
-
-        // ПРОВЕРКА: Если текущий день - ПОНЕДЕЛЬНИК
         if (calendar.get(Calendar.DAY_OF_WEEK) == Calendar.MONDAY) {
             val currentWeekIndex = _weeks.value?.indexOfFirst { it.isSelected } ?: -1
             if (currentWeekIndex > 0) {
-                // Выбираем ПРЕДЫДУЩУЮ неделю
                 selectWeek(_weeks.value!![currentWeekIndex - 1])
-                // ВАЖНО: После выбора недели, нужно вручную выбрать последний день (воскресенье)
                 val prevWeek = _weeks.value!![currentWeekIndex - 1]
                 val sundayCalendar = Calendar.getInstance().apply { time = prevWeek.endDate }
                 selectDay(DayItem(sundayCalendar.time, "", "", false))
-                return // Выходим
+                return
             }
         }
-
-        // Стандартная логика для всех остальных дней
         calendar.add(Calendar.DAY_OF_MONTH, -1)
         selectDay(DayItem(calendar.time, "", "", false))
-    }
-    fun refreshSchedule() {
-        // Пытаемся найти ID в нашем кеше
-        try {
-            val fileInputStream = getApplication<Application>().openFileInput(cacheFileName)
-            val jsonString = fileInputStream.reader().readText()
-            fileInputStream.close()
-            val cachedData = Gson().fromJson(jsonString, CachedData::class.java)
-            loadSchedule(cachedData.targetId) // Запускаем обновление для сохраненного ID
-        } catch (e: Exception) {
-            // Если кеша нет, ничего не делаем
-            Log.e("ViewModel", "Не могу обновить: кеш пуст")
-        }
     }
 }

@@ -1,131 +1,237 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 1. Заменяем ScrollView+LinearLayout на RelativeLayout -->
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:padding="16dp">
+    android:layout_height="match_parent">
 
-    <!-- 2. "Прибиваем" переключатель к низу -->
-    <!-- 1. Контейнер для нижнего переключателя. Прибит к низу. -->
-    <LinearLayout
-        android:id="@+id/containerNavMode"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_alignParentBottom="true"
-        android:background="?attr/selectableItemBackground"
-        android:clickable="true"
-        android:focusable="true"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-
-        <com.google.android.material.switchmaterial.SwitchMaterial
-            android:id="@+id/switchNavigationMode"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:checked="true"
-            android:clickable="false"
-            android:text="Навигация по касанию" />
-    </LinearLayout>
-
-    <!-- 2. Контейнер для верхнего переключателя. Расположен НАД нижним. -->
-    <LinearLayout
-        android:id="@+id/containerShowEmpty"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_above="@id/containerNavMode"
-        android:background="?attr/selectableItemBackground"
-        android:clickable="true"
-        android:focusable="true"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-
-        <com.google.android.material.switchmaterial.SwitchMaterial
-            android:id="@+id/switchShowEmptyLessons"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:checked="true"
-            android:clickable="false"
-            android:text="Отображать 'Нет пары'" />
-    </LinearLayout>
-
-    <!-- 3. Весь остальной контент оборачиваем в ScrollView,
-           который теперь находится НАД переключателем -->
-    <ScrollView
+    <!-- ========================================== -->
+    <!-- ЭКРАН 1: ГЛАВНОЕ МЕНЮ (ПОИСК) -->
+    <!-- ========================================== -->
+    <RelativeLayout
+        android:id="@+id/layout_main_menu"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_above="@id/containerShowEmpty"
-        android:layout_alignParentTop="true"
-        android:layout_marginBottom="16dp"
-        android:fillViewport="true">
+        android:padding="16dp"
+        android:visibility="visible">
 
+        <!-- КНОПКА ПЕРЕХОДА В НАСТРОЙКИ (ВНИЗУ) -->
         <LinearLayout
+            android:id="@+id/btnGoToSettings"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical">
+            android:layout_alignParentBottom="true"
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center_vertical"
+            android:padding="12dp"
+            android:orientation="horizontal">
 
-            <!-- ВСЕ СТАРОЕ СОДЕРЖИМОЕ МЕНЮ (ПОИСК, СПИСКИ) ТЕПЕРЬ ЗДЕСЬ -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:background="@drawable/bg_search_field"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:paddingStart="16dp"
-                android:paddingEnd="8dp">
-
-                <EditText
-                    android:id="@+id/etSearch"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:background="@null"
-                    android:hint="Поиск..."
-                    android:imeOptions="actionDone"
-                    android:inputType="text"
-                    android:paddingVertical="12dp" />
-
-                <ImageButton
-                    android:id="@+id/btnFind"
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:src="@android:drawable/ic_menu_search" />
-            </LinearLayout>
-
-            <ProgressBar
-                android:id="@+id/pbSearch"
-                style="?android:attr/progressBarStyle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center_horizontal"
-                android:layout_marginTop="8dp"
-                android:visibility="gone" />
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@drawable/ic_settings"
+                app:tint="?attr/colorControlNormal"/>
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:text="Закрепленные:"
-                android:textStyle="bold" />
+                android:text="Настройки"
+                android:textSize="16sp"
+                android:layout_marginStart="16dp"
+                android:textColor="?attr/colorOnSurface"/>
+        </LinearLayout>
 
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/rvPinned"
+        <!-- СПИСОК ПОИСКА (НАД КНОПКОЙ) -->
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_above="@id/btnGoToSettings"
+            android:layout_alignParentTop="true"
+            android:layout_marginBottom="16dp"
+            android:fillViewport="true">
+
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp" />
+                android:orientation="vertical">
 
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginVertical="16dp"
-                android:background="?android:attr/listDivider" />
+                <!-- Поле ввода -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_search_field"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="8dp">
 
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/rvSearchResults"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content" />
+                    <EditText
+                        android:id="@+id/etSearch"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:background="@null"
+                        android:hint="Поиск..."
+                        android:imeOptions="actionDone"
+                        android:inputType="text"
+                        android:paddingVertical="12dp" />
 
+                    <ImageButton
+                        android:id="@+id/btnFind"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:src="@android:drawable/ic_menu_search" />
+                </LinearLayout>
+
+                <ProgressBar
+                    android:id="@+id/pbSearch"
+                    style="?android:attr/progressBarStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_horizontal"
+                    android:layout_marginTop="8dp"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="Закрепленные:"
+                    android:textStyle="bold" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rvPinned"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginVertical="16dp"
+                    android:background="?android:attr/listDivider" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rvSearchResults"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
+
+            </LinearLayout>
+        </ScrollView>
+    </RelativeLayout>
+
+    <!-- ========================================== -->
+    <!-- ЭКРАН 2: НАСТРОЙКИ (СКРЫТ ПО УМОЛЧАНИЮ) -->
+    <!-- ========================================== -->
+    <LinearLayout
+        android:id="@+id/layout_settings_menu"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:visibility="gone"
+        android:background="#2F2F2F">
+
+        <!-- КНОПКА НАЗАД -->
+        <LinearLayout
+            android:id="@+id/btnBackToMenu"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingVertical="8dp"
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true">
+
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@android:drawable/ic_menu_revert"
+                app:tint="?attr/colorControlNormal"/>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Назад"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:layout_marginStart="16dp"/>
         </LinearLayout>
-    </ScrollView>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="?android:attr/listDivider"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="16dp"/>
+
+        <!-- ИСТОЧНИК ДАННЫХ -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Источник данных:"
+            android:textColor="?android:attr/textColorSecondary"
+            android:layout_marginBottom="8dp"/>
+
+        <RadioGroup
+            android:id="@+id/radioGroupSource"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="24dp">
+
+            <RadioButton
+                android:id="@+id/rbSfedu"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="SFEDU Modeus (Требуется вход)"
+                android:paddingVertical="8dp"/>
+
+            <RadioButton
+                android:id="@+id/rbRdCenter"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="RDCenter (Без входа)"
+                android:paddingVertical="8dp"/>
+        </RadioGroup>
+
+        <!-- ПЕРЕКЛЮЧАТЕЛИ -->
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switchShowEmpty"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Отображать 'Нет пары'"
+            android:paddingVertical="8dp"
+            android:layout_marginBottom="8dp"/>
+
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switchNavMode"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Навигация по касанию"
+            android:paddingVertical="8dp"
+            android:layout_marginBottom="32dp"/>
+
+        <!-- КНОПКА ВЫХОДА (КРАСНАЯ) -->
+        <!-- Spacer чтобы прижать кнопку вниз (опционально), или просто в потоке -->
+        <Space
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"/>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnLogoutInternal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Выйти из аккаунта"
+            android:textColor="@android:color/white"
+            android:backgroundTint="#B00020"
+            app:icon="@android:drawable/ic_menu_close_clear_cancel"
+            app:iconTint="@android:color/white"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_marginBottom="16dp"/>
+
+    </LinearLayout>
 
 </RelativeLayout>

@@ -1,8 +1,8 @@
 package com.fuck.modeus.data
 
 import com.google.gson.annotations.SerializedName
-import java.util.Date
 
+// Главный ответ
 data class ScheduleResponse(
     @SerializedName("_embedded") val embedded: Embedded
 )
@@ -11,76 +11,56 @@ data class Embedded(
     val events: List<Event>,
     val persons: List<Person>,
     val rooms: List<Room>,
-    @SerializedName("course-unit-realizations") val courseUnitRealizations: List<CourseUnitRealization>,
-    @SerializedName("cycle-realizations") val cycleRealizations: List<CycleRealization>,
-    @SerializedName("event-teams") val eventTeams: List<EventTeam>,
+    @SerializedName("course-unit-realizations") val courseUnits: List<CourseUnit>,
     @SerializedName("event-locations") val eventLocations: List<EventLocation>,
     @SerializedName("event-attendees") val eventAttendees: List<EventAttendee>,
-    @SerializedName("event-rooms") val eventRooms: List<EventRoom>
+    @SerializedName("event-rooms") val eventRooms: List<EventRoom>,
+    @SerializedName("cycle-realizations") val cycleRealizations: List<CycleRealization>,
+    @SerializedName("event-teams") val eventTeams: List<EventTeam>
 )
 
 data class Event(
     val id: String,
     val name: String,
-    val nameShort: String?,
-    @SerializedName("typeId") val type: String,
-    @SerializedName("_links") val links: EventLinks,
-    // ДОБАВЛЯЕМ НЕДОСТАЮЩИЕ ПОЛЯ:
-    val start: String,
-    val end: String,
-    val startsAt: String,
-    val endsAt: String
+    @SerializedName("nameShort") val nameShort: String?,
+    @SerializedName("typeId") val typeId: String, // LECT, SEMI...
+    @SerializedName("start") val start: String, // 2025-10-18T09:50:00+03:00
+    @SerializedName("end") val end: String,
+    @SerializedName("_links") val links: EventLinks
 )
 
-data class Person(val id: String, val fullName: String)
-data class Room(val id: String, val name: String)
-data class Link(val href: String)
-
 data class EventLinks(
-    @SerializedName("course-unit-realization") val courseUnitRealization: Link?,
+    @SerializedName("course-unit-realization") val courseUnit: Link?,
     @SerializedName("cycle-realization") val cycleRealization: Link?
 )
 
-data class EventAttendee(val _links: Links) {
-    data class Links(val event: Link?, val person: Link?)
+data class Link(val href: String)
+
+// Справочники
+data class Person(val id: String, val fullName: String)
+data class Room(val id: String, val name: String)
+data class CourseUnit(val id: String, val name: String, val nameShort: String?)
+data class CycleRealization(val id: String, val code: String?)
+
+// Связки
+data class EventAttendee(val _links: AttLinks) {
+    data class AttLinks(val event: Link, val person: Link)
 }
 
-data class EventRoom(val _links: Links) {
-    data class Links(val event: Link?, val room: Link?)
+data class EventLocation(val eventId: String, val customLocation: String?, val _links: LocLinks) {
+    data class LocLinks(val self: List<Link>, @SerializedName("event-rooms") val eventRooms: Link?)
 }
 
-// --- НОВЫЕ КЛАССЫ ДЛЯ ДЕТАЛЬНОЙ ИНФОРМАЦИИ ---
+data class EventRoom(val id: String, val _links: RoomLinks) {
+    data class RoomLinks(val event: Link, val room: Link)
+}
 
-data class CourseUnitRealization(
-    val id: String,
-    val name: String,
-    val nameShort: String?
-)
+data class EventTeam(val eventId: String, val size: Int)
 
-data class CycleRealization(
-    val id: String,
-    val code: String?,
-    @SerializedName("_links") val links: CycleRealizationLinks
-)
 
-data class CycleRealizationLinks(
-    @SerializedName("course-unit-realization") val courseUnitRealization: Link
-)
-
-data class EventTeam(
-    val eventId: String,
-    val size: Int?
-)
-
-data class EventLocation(
-    val eventId: String,
-    val customLocation: String?
-)
-
-// --- ФИНАЛЬНАЯ МОДЕЛЬ ДЛЯ ОТОБРАЖЕНИЯ ---
-
+// --- Модель для UI (оставляем старую, но метод парсинга изменится) ---
 data class ScheduleItem(
-    val id: String, // Добавляем ID самого события, чтобы находить его
+    val id: String,
     val fullStartDate: Long,
     val subject: String,
     val moduleShortName: String?,
@@ -90,15 +70,32 @@ data class ScheduleItem(
     val teacher: String,
     val room: String,
     val type: String,
-    // Новые поля для детальной информации
     val moduleFullName: String?,
     val groupCode: String?,
     val teamSize: Int?,
-    val locationType: String // "Online" или "Очно"
+    val locationType: String
 )
+
 data class CachedData(
     val targetId: String,
     val targetName: String,
     val lastUpdateTime: String,
-    val scheduleJsonResponse: String // Здесь будет храниться весь JSON-ответ сервера как строка
+    val scheduleJsonResponse: String
 )
+
+// --- Хелпер для перевода типов пар ---
+object EventTypeMapper {
+    fun getHumanReadableType(typeId: String): String {
+        return when(typeId) {
+            "LECT" -> "Лекция"
+            "SEMI" -> "Практика"
+            "LAB" -> "Лабораторная"
+            "EXAM" -> "Экзамен"
+            "PRETEST" -> "Зачет"
+            "CONS" -> "Консультация"
+            "CUR_CHECK" -> "Текущий контроль"
+            "MID_CHECK" -> "Аттестация"
+            else -> typeId
+        }
+    }
+}

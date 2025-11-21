@@ -96,7 +96,13 @@ class MainActivity : AppCompatActivity() {
         setupDrawer()
         observeViewModel()
 
-        if (savedInstanceState == null) {
+        val restartId = intent.getStringExtra("RESTART_WITH_ID")
+
+        if (restartId != null) {
+            // Если мы вернулись после логина - сразу грузим расписание
+            viewModel.loadSchedule(restartId)
+        } else if (savedInstanceState == null) {
+            // Иначе - обычная загрузка (кеш)
             viewModel.loadInitialSchedule()
         }
     }
@@ -163,53 +169,86 @@ class MainActivity : AppCompatActivity() {
         }
     }
     private fun setupDrawer() {
-        // ... (этот метод остается без изменений)
         val navigationView = findViewById<NavigationView>(R.id.navigationView)
-        val switchShowEmpty = navigationView.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchShowEmptyLessons)
-        val containerShowEmpty = navigationView.findViewById<LinearLayout>(R.id.containerShowEmpty)
-        containerShowEmpty.setOnClickListener {
-            // При клике инвертируем состояние свитча и вызываем ViewModel
-            val newState = !switchShowEmpty.isChecked
-            switchShowEmpty.isChecked = newState
-            viewModel.setShowEmptyLessons(newState)
+
+        // --- ЛОГИКА СМЕНЫ ЭКРАНОВ (ГЛАВНЫЙ <-> НАСТРОЙКИ) ---
+        val layoutMain = navigationView.findViewById<View>(R.id.layout_main_menu)
+        val layoutSettings = navigationView.findViewById<View>(R.id.layout_settings_menu)
+        val btnGoToSettings = navigationView.findViewById<View>(R.id.btnGoToSettings)
+        val btnBackToMenu = navigationView.findViewById<View>(R.id.btnBackToMenu)
+
+        // Открыть настройки
+        btnGoToSettings.setOnClickListener {
+            layoutMain.visibility = View.GONE
+            layoutSettings.visibility = View.VISIBLE
         }
 
-        viewModel.showEmptyLessons.observe(this) { shouldShow ->
-            if (switchShowEmpty.isChecked != shouldShow) {
-                switchShowEmpty.isChecked = shouldShow
+        // Вернуться назад
+        btnBackToMenu.setOnClickListener {
+            layoutSettings.visibility = View.GONE
+            layoutMain.visibility = View.VISIBLE
+        }
+
+        // При закрытии шторки - сбрасываем на главный экран (опционально, для удобства)
+        drawerLayout.addDrawerListener(object : DrawerLayout.SimpleDrawerListener() {
+            override fun onDrawerClosed(drawerView: View) {
+                layoutSettings.visibility = View.GONE
+                layoutMain.visibility = View.VISIBLE
             }
-        }
-        val switchNavMode = navigationView.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchNavigationMode)
-        val containerNavMode = navigationView.findViewById<LinearLayout>(R.id.containerNavMode)
-        containerNavMode.setOnClickListener {
-            val newState = !switchNavMode.isChecked
-            switchNavMode.isChecked = newState
-            viewModel.setNavigationMode(newState)
+        })
+
+        // --- ЛОГИКА ВНУТРИ НАСТРОЕК ---
+
+        val rbSfedu = navigationView.findViewById<android.widget.RadioButton>(R.id.rbSfedu)
+        val rbRdCenter = navigationView.findViewById<android.widget.RadioButton>(R.id.rbRdCenter)
+        val rgSource = navigationView.findViewById<android.widget.RadioGroup>(R.id.radioGroupSource)
+        val switchEmpty = navigationView.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchShowEmpty)
+        val switchNav = navigationView.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchNavMode)
+        val btnLogout = navigationView.findViewById<View>(R.id.btnLogoutInternal)
+
+        // 1. Инициализация Источника API
+        val currentSource = com.fuck.modeus.data.ApiSettings.getApiSource(this)
+        if (currentSource == com.fuck.modeus.data.ApiSource.SFEDU) {
+            rbSfedu.isChecked = true
+            btnLogout.visibility = View.VISIBLE
+        } else {
+            rbRdCenter.isChecked = true
+            btnLogout.visibility = View.GONE
         }
 
+        rgSource.setOnCheckedChangeListener { _, checkedId ->
+            val newSource = if (checkedId == R.id.rbSfedu) com.fuck.modeus.data.ApiSource.SFEDU else com.fuck.modeus.data.ApiSource.RDCENTER
+            com.fuck.modeus.data.ApiSettings.setApiSource(this, newSource)
+
+            // Прячем/показываем кнопку выхода
+            btnLogout.visibility = if (newSource == com.fuck.modeus.data.ApiSource.SFEDU) View.VISIBLE else View.GONE
+
+            Toast.makeText(this, "Источник изменен. Обновите расписание.", Toast.LENGTH_SHORT).show()
+        }
+
+        // 2. Инициализация переключателей
+        viewModel.showEmptyLessons.observe(this) {
+            if (switchEmpty.isChecked != it) switchEmpty.isChecked = it
+        }
         viewModel.navigationMode.observe(this) { mode ->
-            if (switchNavMode.isChecked != (mode == NavigationMode.TOUCH)) {
-                switchNavMode.isChecked = (mode == NavigationMode.TOUCH)
-            }
+            val isTouch = mode == NavigationMode.TOUCH
+            if (switchNav.isChecked != (mode == NavigationMode.TOUCH)) switchNav.isChecked = isTouch
         }
-        val etSearch = navigationView.findViewById<EditText>(R.id.etSearch)
 
-        viewModel.showEmptyLessons.observe(this) { shouldShow ->
-            if (switchShowEmpty.isChecked != shouldShow) {
-                switchShowEmpty.isChecked = shouldShow
-            }
-        }
-        switchShowEmpty.setOnCheckedChangeListener { _, isChecked ->
+        switchEmpty.setOnCheckedChangeListener { _, isChecked ->
             viewModel.setShowEmptyLessons(isChecked)
         }
 
-        switchNavMode.setOnCheckedChangeListener { _, isChecked ->
+        switchNav.setOnCheckedChangeListener { _, isChecked ->
             viewModel.setNavigationMode(isChecked)
         }
-        viewModel.navigationMode.observe(this) { mode ->
-            // Устанавливаем состояние свитча без вызова setOnCheckedChangeListener
-            switchNavMode.isChecked = (mode == NavigationMode.TOUCH)
+
+        // 3. Кнопка выхода
+        btnLogout.setOnClickListener {
+            performLogout()
         }
+
+        // --- ЛОГИКА ПОИСКА (БЕЗ ИЗМЕНЕНИЙ) ---
 
         pinnedAdapter = SearchAdapter(
             onItemClick = { selectTargetAndFind(it) },
@@ -223,6 +262,7 @@ class MainActivity : AppCompatActivity() {
         searchResultsAdapter = SearchAdapter(
             onItemClick = { target ->
                 selectedTarget = target
+                val etSearch = navigationView.findViewById<EditText>(R.id.etSearch)
                 etSearch.setText(target.name)
                 searchResultsAdapter.submitList(emptyList())
             },
@@ -233,6 +273,7 @@ class MainActivity : AppCompatActivity() {
             layoutManager = LinearLayoutManager(this@MainActivity)
         }
 
+        val etSearch = navigationView.findViewById<EditText>(R.id.etSearch)
         etSearch.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
@@ -248,6 +289,25 @@ class MainActivity : AppCompatActivity() {
                 selectTargetAndFind(it)
             } ?: Toast.makeText(this, "Сначала выберите элемент из списка", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    // ВАЖНО: Изменил private на public, чтобы вызывать из SettingsBottomSheet
+    fun performLogout() {
+        // 1. Удаляем токен из приложения
+        com.fuck.modeus.data.TokenManager.clearToken(this)
+
+        // 2. Очищаем куки WebView (чтобы при следующем входе Microsoft снова спросил пароль)
+        val cookieManager = android.webkit.CookieManager.getInstance()
+        cookieManager.removeAllCookies(null)
+        cookieManager.flush()
+
+        // 3. Очищаем хранилища WebView
+        android.webkit.WebStorage.getInstance().deleteAllData()
+
+        // 4. Очищаем текущее расписание
+        viewModel.refreshSchedule()
+
+        Toast.makeText(this, "Выход выполнен", Toast.LENGTH_SHORT).show()
     }
 
     private fun selectTargetAndFind(target: ScheduleTarget) {
