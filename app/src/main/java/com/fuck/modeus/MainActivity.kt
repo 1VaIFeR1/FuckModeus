@@ -1,214 +1,263 @@
 package com.fuck.modeus.ui
 
 import android.annotation.SuppressLint
-import android.app.AlertDialog
+import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
+import android.view.GestureDetector
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
+import android.view.WindowManager
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.ProgressBar
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.viewModels
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.cardview.widget.CardView
-import androidx.core.view.GravityCompat
-import androidx.drawerlayout.widget.DrawerLayout
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-import com.fuck.modeus.R
-import com.fuck.modeus.data.ScheduleItem
-import com.fuck.modeus.data.ScheduleTarget
-import com.google.android.material.navigation.NavigationView
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.view.GravityCompat
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import android.view.MotionEvent
-import kotlin.math.abs
-import android.view.GestureDetector
-import android.widget.LinearLayout
-import android.content.Intent
-import android.net.Uri
+import androidx.drawerlayout.widget.DrawerLayout
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import androidx.viewpager2.widget.ViewPager2
+import com.fuck.modeus.R
+import com.fuck.modeus.data.ApiSettings
+import com.fuck.modeus.data.ApiSource
+import com.fuck.modeus.data.DayItem
+import com.fuck.modeus.data.ScheduleItem
+import com.fuck.modeus.data.ScheduleTarget
+import com.google.android.material.navigation.NavigationView
+import com.google.android.material.switchmaterial.SwitchMaterial
+import java.text.SimpleDateFormat
+import java.util.*
 
 class MainActivity : AppCompatActivity() {
 
     private val viewModel: MainViewModel by viewModels()
 
-    // Адаптеры
-    private lateinit var scheduleAdapter: ScheduleAdapter
     private lateinit var pinnedAdapter: SearchAdapter
     private lateinit var searchResultsAdapter: SearchAdapter
     private lateinit var weeksAdapter: WeeksAdapter
     private lateinit var daysAdapter: DaysAdapter
+    private lateinit var pagerAdapter: DayPagerAdapter
 
-    // View элементы - объявлены здесь
     private lateinit var drawerLayout: DrawerLayout
-    private lateinit var swipeRefreshLayout: SwipeRefreshLayout
-    private lateinit var recyclerView: RecyclerView
+    private lateinit var viewPager: ViewPager2
+    private lateinit var swipeRefreshLayout: ScrollAwareSwipeRefreshLayout
 
-    private val animationDuration = 200L
     private var selectedTarget: ScheduleTarget? = null
+    private var headerHeightPx = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // --- ФИНАЛЬНЫЙ КОД ДЛЯ ПОЛНОЭКРАННОГО РЕЖИМА ---
-
-        // Шаг 1: Принудительно включаем ночную тему
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
-
-        // Шаг 2: Устанавливаем layout
         setContentView(R.layout.activity_main)
 
-        // Шаг 3: Используем WindowInsetsController для современных API (Android 11+)
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        val insetsController = WindowInsetsControllerCompat(window, window.decorView)
-        insetsController.hide(WindowInsetsCompat.Type.systemBars())
-        insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        // --- 1. СКРЫВАЕМ СИСТЕМНЫЕ ПАНЕЛИ (ЖЕСТКО) ---
+        hideSystemUI()
 
-        // Шаг 4: Явно устанавливаем флаги для старых API и делаем бары прозрачными
-        // Это может быть избыточно, но часто решает проблемы на кастомных оболочках
-        @Suppress("DEPRECATION")
-        window.decorView.systemUiVisibility = (
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                        or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                        or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                        or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                        or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        or View.SYSTEM_UI_FLAG_FULLSCREEN)
-
-        window.statusBarColor = Color.TRANSPARENT
-        window.navigationBarColor = Color.TRANSPARENT
-        // --- КОНЕЦ КОДА ДЛЯ ПОЛНОЭКРАННОГО РЕЖИМА ---
-
-        // --- Дальше идет ваша обычная логика инициализации ---
         drawerLayout = findViewById(R.id.drawerLayout)
+        viewPager = findViewById(R.id.viewPager)
         swipeRefreshLayout = findViewById(R.id.swipeRefreshLayout)
-        recyclerView = findViewById(R.id.recyclerView)
+
+        // --- 2. ОТСТУПЫ ПОД КАМЕРУ (Safe Area) ---
+        // Используем displayCutout, так как systemBars теперь скрыты (размер 0)
+        val mainContentContainer = findViewById<View>(R.id.mainContentContainer)
+        ViewCompat.setOnApplyWindowInsetsListener(mainContentContainer) { view, windowInsets ->
+            // Берем insets от выреза (камеры) и системных панелей (на случай если они вылезут)
+            val insets = windowInsets.getInsets(WindowInsetsCompat.Type.displayCutout() or WindowInsetsCompat.Type.systemBars())
+
+            // Ставим padding, чтобы контент не налез на камеру
+            view.setPadding(insets.left, insets.top, insets.right, insets.bottom)
+
+            val density = resources.displayMetrics.density
+            headerHeightPx = insets.top + (70 * density).toInt()
+
+            WindowInsetsCompat.CONSUMED
+        }
 
         setupMainContent()
         setupDrawer()
         observeViewModel()
 
         val restartId = intent.getStringExtra("RESTART_WITH_ID")
-
         if (restartId != null) {
-            // Если мы вернулись после логина - сразу грузим расписание
             viewModel.loadSchedule(restartId)
         } else if (savedInstanceState == null) {
-            // Иначе - обычная загрузка (кеш)
             viewModel.loadInitialSchedule()
         }
     }
 
-    @SuppressLint("ClickableViewAccessibility")
-    private fun setupMainContent() {
-        // 1. Настройка списка расписания
-        scheduleAdapter = ScheduleAdapter()
-        recyclerView.apply {
-            adapter = scheduleAdapter
-            layoutManager = LinearLayoutManager(this@MainActivity)
+    // Метод для скрытия интерфейса
+    private fun hideSystemUI() {
+        // Говорим системе, что мы сами управляем контентом
+        WindowCompat.setDecorFitsSystemWindows(window, false)
 
-            // ВЕШАЕМ СЛУШАТЕЛЬ СВАЙПОВ
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        // Скрываем и Статус-бар, и Навигацию
+        controller.hide(WindowInsetsCompat.Type.systemBars())
+        // При свайпе они появятся ненадолго и исчезнут
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
 
+        // Делаем фон прозрачным для надежности
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+
+        // Для старых API и специфичных прошивок (на всякий случай)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
-        scheduleAdapter.registerAdapterDataObserver(object : RecyclerView.AdapterDataObserver() {
-            override fun onItemRangeInserted(positionStart: Int, itemCount: Int) {
-                if (positionStart == 0 && itemCount > 0) {
-                    recyclerView.post { recyclerView.scrollToPosition(0) }
-                }
+    }
+
+    // Если пользователь свернул приложение и вернулся — убеждаемся, что бар снова скрыт
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            hideSystemUI()
+        }
+    }
+
+    private fun setupMainContent() {
+        pagerAdapter = DayPagerAdapter(this, viewModel)
+        viewPager.adapter = pagerAdapter
+        viewPager.getChildAt(0).overScrollMode = RecyclerView.OVER_SCROLL_NEVER
+
+        swipeRefreshLayout.setOnRefreshListener {
+            viewModel.refreshSchedule()
+        }
+
+        viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
+            override fun onPageSelected(position: Int) {
+                super.onPageSelected(position)
+                viewModel.onPageChanged(position)
+                updateDaysList(position)
             }
         })
-        recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
-                super.onScrolled(recyclerView, dx, dy)
 
-                // canScrollVertically(-1) возвращает true, если можно скроллить вверх.
-                // Если скроллить вверх нельзя - значит, мы в самом верху.
-                swipeRefreshLayout.isEnabled = !recyclerView.canScrollVertically(-1)
+        viewModel.currentPagerPosition.observe(this) { pos ->
+            if (viewPager.currentItem != pos) {
+                viewPager.setCurrentItem(pos, false)
             }
-        })
+        }
 
-        // 2. Настройка списка недель
-        weeksAdapter = WeeksAdapter { week -> viewModel.selectWeek(week) }
+        weeksAdapter = WeeksAdapter { week ->
+            val diffMillis = week.startDate.time - viewModel.semesterStartDate.time
+            val diffDays = (diffMillis / (1000 * 60 * 60 * 24)).toInt()
+            viewPager.setCurrentItem(diffDays, true)
+        }
         val rvWeeks = findViewById<RecyclerView>(R.id.rvWeeks)
         rvWeeks.apply {
             adapter = weeksAdapter
             layoutManager = LinearLayoutManager(this@MainActivity, LinearLayoutManager.HORIZONTAL, false)
         }
-        weeksAdapter.registerAdapterDataObserver(object : RecyclerView.AdapterDataObserver() {
-            override fun onItemRangeInserted(positionStart: Int, itemCount: Int) {
-                val currentWeekIndex = viewModel.weeks.value?.indexOfFirst { it.isSelected } ?: -1
-                if (currentWeekIndex != -1) {
-                    rvWeeks.post { (rvWeeks.layoutManager as LinearLayoutManager).scrollToPositionWithOffset(currentWeekIndex, 0) }
-                }
-            }
-        })
 
-        // 3. Настройка списка дней
-        daysAdapter = DaysAdapter { day -> viewModel.selectDay(day) }
+        daysAdapter = DaysAdapter { dayItem ->
+            val diffMillis = dayItem.date.time - viewModel.semesterStartDate.time
+            val diffDays = (diffMillis / (1000 * 60 * 60 * 24)).toInt()
+            viewPager.setCurrentItem(diffDays, true)
+        }
         findViewById<RecyclerView>(R.id.rvDays).apply {
             adapter = daysAdapter
             layoutManager = LinearLayoutManager(this@MainActivity, LinearLayoutManager.HORIZONTAL, false)
         }
 
-        // 4. Настройка "потяни для обновления"
-        swipeRefreshLayout.setOnRefreshListener {
-            viewModel.refreshSchedule()
-        }
-
-        // 5. Настройка кнопки открытия меню
         findViewById<ImageButton>(R.id.btnOpenMenu).setOnClickListener {
             drawerLayout.openDrawer(GravityCompat.END)
         }
+
+        findViewById<TextView>(R.id.tvScheduleTitle).setOnLongClickListener {
+            viewModel.refreshSchedule()
+            Toast.makeText(this, "Обновление...", Toast.LENGTH_SHORT).show()
+            true
+        }
     }
+
+    private fun updateDaysList(pagerPosition: Int) {
+        val cal = Calendar.getInstance()
+        cal.time = viewModel.semesterStartDate
+        cal.add(Calendar.DAY_OF_YEAR, pagerPosition)
+        val currentDate = cal.time
+
+        cal.firstDayOfWeek = Calendar.MONDAY
+        cal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+        if (cal.time.after(currentDate)) {
+            cal.add(Calendar.DAY_OF_WEEK, -7)
+        }
+
+        val days = mutableListOf<DayItem>()
+        val dateFormat = SimpleDateFormat("d", Locale("ru"))
+        val dayNameFormat = SimpleDateFormat("EE", Locale("ru"))
+
+        for (i in 0..6) {
+            val date = cal.time
+            val isSame = isSameDay(date, currentDate)
+            days.add(DayItem(
+                date = date,
+                dayOfWeek = dayNameFormat.format(date).capitalize(Locale.ROOT),
+                dayOfMonth = dateFormat.format(date),
+                isSelected = isSame
+            ))
+            cal.add(Calendar.DAY_OF_MONTH, 1)
+        }
+        daysAdapter.submitList(days)
+    }
+
+    private fun isSameDay(d1: Date, d2: Date): Boolean {
+        val c1 = Calendar.getInstance().apply { time = d1 }
+        val c2 = Calendar.getInstance().apply { time = d2 }
+        return c1.get(Calendar.YEAR) == c2.get(Calendar.YEAR) &&
+                c1.get(Calendar.DAY_OF_YEAR) == c2.get(Calendar.DAY_OF_YEAR)
+    }
+
     private fun setupDrawer() {
         val navigationView = findViewById<NavigationView>(R.id.navigationView)
 
-        // --- ЛОГИКА СМЕНЫ ЭКРАНОВ (ГЛАВНЫЙ <-> НАСТРОЙКИ) ---
         val layoutMain = navigationView.findViewById<View>(R.id.layout_main_menu)
         val layoutSettings = navigationView.findViewById<View>(R.id.layout_settings_menu)
         val btnGoToSettings = navigationView.findViewById<View>(R.id.btnGoToSettings)
         val btnBackToMenu = navigationView.findViewById<View>(R.id.btnBackToMenu)
 
-        // Открыть настройки
-        btnGoToSettings.setOnClickListener {
+        btnGoToSettings?.setOnClickListener {
             layoutMain.visibility = View.GONE
             layoutSettings.visibility = View.VISIBLE
         }
 
-        // Вернуться назад
-        btnBackToMenu.setOnClickListener {
+        btnBackToMenu?.setOnClickListener {
             layoutSettings.visibility = View.GONE
             layoutMain.visibility = View.VISIBLE
         }
 
-        // При закрытии шторки - сбрасываем на главный экран (опционально, для удобства)
         drawerLayout.addDrawerListener(object : DrawerLayout.SimpleDrawerListener() {
             override fun onDrawerClosed(drawerView: View) {
-                layoutSettings.visibility = View.GONE
-                layoutMain.visibility = View.VISIBLE
+                if (layoutSettings.visibility == View.VISIBLE) {
+                    layoutSettings.visibility = View.GONE
+                    layoutMain.visibility = View.VISIBLE
+                }
             }
         })
 
-        // --- ЛОГИКА ВНУТРИ НАСТРОЕК ---
-
-        val rbSfedu = navigationView.findViewById<android.widget.RadioButton>(R.id.rbSfedu)
-        val rbRdCenter = navigationView.findViewById<android.widget.RadioButton>(R.id.rbRdCenter)
-        val rgSource = navigationView.findViewById<android.widget.RadioGroup>(R.id.radioGroupSource)
-        val switchEmpty = navigationView.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchShowEmpty)
-        val switchNav = navigationView.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchNavMode)
+        val rbSfedu = navigationView.findViewById<RadioButton>(R.id.rbSfedu)
+        val rbRdCenter = navigationView.findViewById<RadioButton>(R.id.rbRdCenter)
+        val rgSource = navigationView.findViewById<RadioGroup>(R.id.radioGroupSource)
+        val switchEmpty = navigationView.findViewById<SwitchMaterial>(R.id.switchShowEmpty)
         val btnLogout = navigationView.findViewById<View>(R.id.btnLogoutInternal)
 
-        // 1. Инициализация Источника API
-        val currentSource = com.fuck.modeus.data.ApiSettings.getApiSource(this)
-        if (currentSource == com.fuck.modeus.data.ApiSource.SFEDU) {
+        val currentSource = ApiSettings.getApiSource(this)
+        if (currentSource == ApiSource.SFEDU) {
             rbSfedu.isChecked = true
             btnLogout.visibility = View.VISIBLE
         } else {
@@ -217,44 +266,28 @@ class MainActivity : AppCompatActivity() {
         }
 
         rgSource.setOnCheckedChangeListener { _, checkedId ->
-            val newSource = if (checkedId == R.id.rbSfedu) com.fuck.modeus.data.ApiSource.SFEDU else com.fuck.modeus.data.ApiSource.RDCENTER
-            com.fuck.modeus.data.ApiSettings.setApiSource(this, newSource)
-
-            // Прячем/показываем кнопку выхода
-            btnLogout.visibility = if (newSource == com.fuck.modeus.data.ApiSource.SFEDU) View.VISIBLE else View.GONE
-
+            val newSource = if (checkedId == R.id.rbSfedu) ApiSource.SFEDU else ApiSource.RDCENTER
+            ApiSettings.setApiSource(this, newSource)
+            btnLogout.visibility = if (newSource == ApiSource.SFEDU) View.VISIBLE else View.GONE
             Toast.makeText(this, "Источник изменен. Обновите расписание.", Toast.LENGTH_SHORT).show()
         }
 
-        // 2. Инициализация переключателей
         viewModel.showEmptyLessons.observe(this) {
             if (switchEmpty.isChecked != it) switchEmpty.isChecked = it
         }
-        viewModel.navigationMode.observe(this) { mode ->
-            val isTouch = mode == NavigationMode.TOUCH
-            if (switchNav.isChecked != (mode == NavigationMode.TOUCH)) switchNav.isChecked = isTouch
-        }
 
-        switchEmpty.setOnCheckedChangeListener { _, isChecked ->
-            viewModel.setShowEmptyLessons(isChecked)
-        }
+        switchEmpty.setOnCheckedChangeListener { _, isChecked -> viewModel.setShowEmptyLessons(isChecked) }
+        btnLogout.setOnClickListener { performLogout() }
 
-        switchNav.setOnCheckedChangeListener { _, isChecked ->
-            viewModel.setNavigationMode(isChecked)
-        }
+        setupSearchLogic(navigationView)
+    }
 
-        // 3. Кнопка выхода
-        btnLogout.setOnClickListener {
-            performLogout()
-        }
-
-        // --- ЛОГИКА ПОИСКА (БЕЗ ИЗМЕНЕНИЙ) ---
-
+    private fun setupSearchLogic(navView: NavigationView) {
         pinnedAdapter = SearchAdapter(
             onItemClick = { selectTargetAndFind(it) },
             onPinClick = { viewModel.togglePin(it) }
         )
-        navigationView.findViewById<RecyclerView>(R.id.rvPinned).apply {
+        navView.findViewById<RecyclerView>(R.id.rvPinned).apply {
             adapter = pinnedAdapter
             layoutManager = LinearLayoutManager(this@MainActivity)
         }
@@ -262,151 +295,49 @@ class MainActivity : AppCompatActivity() {
         searchResultsAdapter = SearchAdapter(
             onItemClick = { target ->
                 selectedTarget = target
-                val etSearch = navigationView.findViewById<EditText>(R.id.etSearch)
+                val etSearch = navView.findViewById<EditText>(R.id.etSearch)
                 etSearch.setText(target.name)
                 searchResultsAdapter.submitList(emptyList())
             },
             onPinClick = { viewModel.togglePin(it) }
         )
-        navigationView.findViewById<RecyclerView>(R.id.rvSearchResults).apply {
+        navView.findViewById<RecyclerView>(R.id.rvSearchResults).apply {
             adapter = searchResultsAdapter
             layoutManager = LinearLayoutManager(this@MainActivity)
         }
 
-        val etSearch = navigationView.findViewById<EditText>(R.id.etSearch)
+        val etSearch = navView.findViewById<EditText>(R.id.etSearch)
         etSearch.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                if (etSearch.hasFocus()) {
-                    viewModel.search(s.toString())
-                }
+                if (etSearch.hasFocus()) viewModel.search(s.toString())
             }
             override fun afterTextChanged(s: Editable?) {}
         })
 
-        navigationView.findViewById<ImageButton>(R.id.btnFind).setOnClickListener {
-            selectedTarget?.let {
-                selectTargetAndFind(it)
-            } ?: Toast.makeText(this, "Сначала выберите элемент из списка", Toast.LENGTH_SHORT).show()
+        navView.findViewById<ImageButton>(R.id.btnFind).setOnClickListener {
+            selectedTarget?.let { selectTargetAndFind(it) }
+                ?: Toast.makeText(this, "Выберите объект из списка", Toast.LENGTH_SHORT).show()
         }
     }
 
-    // ВАЖНО: Изменил private на public, чтобы вызывать из SettingsBottomSheet
     fun performLogout() {
-        // 1. Удаляем токен из приложения
         com.fuck.modeus.data.TokenManager.clearToken(this)
-
-        // 2. Очищаем куки WebView (чтобы при следующем входе Microsoft снова спросил пароль)
         val cookieManager = android.webkit.CookieManager.getInstance()
         cookieManager.removeAllCookies(null)
         cookieManager.flush()
-
-        // 3. Очищаем хранилища WebView
         android.webkit.WebStorage.getInstance().deleteAllData()
-
-        // 4. Очищаем текущее расписание
         viewModel.refreshSchedule()
-
-        Toast.makeText(this, "Выход выполнен", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun selectTargetAndFind(target: ScheduleTarget) {
-        swipeRefreshLayout.isRefreshing = true
-        viewModel.loadSchedule(target.person_id)
-        // Строки с SharedPreferences больше не нужны
-        // ...
+        Toast.makeText(this, "Вы вышли из аккаунта", Toast.LENGTH_SHORT).show()
         drawerLayout.closeDrawer(GravityCompat.END)
     }
 
-    private fun observeViewModel() {
-        // Здесь мы можем найти View один раз и использовать их
-        val tvScheduleTitle = findViewById<TextView>(R.id.tvScheduleTitle)
-        val tvNoLessons = findViewById<TextView>(R.id.tvNoLessons)
-        val tvLastUpdate = findViewById<TextView>(R.id.tvLastUpdate)
-        val navigationView = findViewById<NavigationView>(R.id.navigationView)
-        val pbSearch = navigationView.findViewById<ProgressBar>(R.id.pbSearch)
-
-        viewModel.filteredSchedule.observe(this) { scheduleItems ->
-            swipeRefreshLayout.isRefreshing = false
-            val tvNoLessons = findViewById<TextView>(R.id.tvNoLessons)
-
-            val direction = viewModel.swipeDirection.value ?: SwipeDirection.NONE
-
-            // Если анимация не нужна (клик по дню, первая загрузка, обновление)
-            if (direction == SwipeDirection.NONE) {
-                updateScheduleData(scheduleItems, tvNoLessons)
-                return@observe
-            }
-
-            // Если был свайп, запускаем анимацию
-            val screenWidth = resources.displayMetrics.widthPixels.toFloat()
-            val slideOutX = if (direction == SwipeDirection.LEFT) -screenWidth else screenWidth
-            val slideInX = -slideOutX
-
-            recyclerView.animate()
-                .translationX(slideOutX)
-                .alpha(0f)
-                .setDuration(animationDuration)
-                .withEndAction {
-                    updateScheduleData(scheduleItems, tvNoLessons)
-                    recyclerView.translationX = slideInX // Мгновенный перенос за экран
-                    recyclerView.animate()
-                        .translationX(0f)
-                        .alpha(1f)
-                        .setDuration(animationDuration)
-                        .start()
-                }
-                .start()
-        }
-
-        viewModel.weeks.observe(this) { weeks ->
-            weeksAdapter.submitList(weeks)
-        }
-
-        viewModel.days.observe(this) { days ->
-            daysAdapter.submitList(days)
-        }
-
-        viewModel.error.observe(this) { errorMessage ->
-            swipeRefreshLayout.isRefreshing = false // Используем свойство класса
-            Toast.makeText(this, errorMessage, Toast.LENGTH_LONG).show()
-        }
-
-        viewModel.lastUpdateTime.observe(this) { updateTime ->
-            tvLastUpdate.text = updateTime
-        }
-
-        viewModel.scheduleTitle.observe(this) { title ->
-            tvScheduleTitle.text = title
-        }
-
-        viewModel.searchResults.observe(this) { results ->
-            searchResultsAdapter.submitList(results)
-        }
-
-        viewModel.pinnedTargets.observe(this) { pinnedItems ->
-            pinnedAdapter.submitList(pinnedItems)
-        }
-
-        viewModel.searchInProgress.observe(this) { isInProgress ->
-            pbSearch.visibility = if (isInProgress) View.VISIBLE else View.GONE
-        }
-
-        viewModel.navigationMode.observe(this) { mode ->
-            setupNavigationListeners(mode)
-        }
+    private fun selectTargetAndFind(target: ScheduleTarget) {
+        viewModel.loadSchedule(target.person_id)
+        drawerLayout.closeDrawer(GravityCompat.END)
     }
 
-    private fun updateScheduleData(scheduleItems: List<ScheduleItem>, tvNoLessons: TextView) {
-        scheduleAdapter.submitList(scheduleItems) {
-            // Эта прокрутка сработает после того, как адаптер закончит свои вычисления
-            if (scheduleItems.isNotEmpty()) {
-                recyclerView.scrollToPosition(0)
-            }
-        }
-        tvNoLessons.visibility = if (scheduleItems.isEmpty()) View.VISIBLE else View.GONE
-    }
-    private fun showLessonDetailsDialog(item: ScheduleItem) {
+    fun showLessonDetailsDialog(item: ScheduleItem) {
         val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_lesson_details, null)
         val dialog = AlertDialog.Builder(this)
             .setView(dialogView)
@@ -422,127 +353,75 @@ class MainActivity : AppCompatActivity() {
         tvSubject.text = item.subject
         tvModuleFull.text = "📚 Модуль: ${item.moduleFullName ?: "не указан"}"
 
-        // --- УПРАВЛЯЕМ КЛИКАБЕЛЬНОСТЬЮ И ЦВЕТОМ ---
-
-        // Преподаватель
         tvTeacher.text = "🧑‍🏫 Преподаватель: ${item.teacher}"
         if (item.teacher != "не назначен") {
-            tvTeacher.setTextColor(getColor(R.color.link_blue)) // Делаем синим
-
-            // Обычный клик - поиск внутри приложения
-            tvTeacher.setOnClickListener {
-                searchFor(item.teacher)
-                dialog.dismiss()
-            }
-
-            // [FIX 1.4.1] Восстанавливаем поиск в браузере
+            tvTeacher.setTextColor(getColor(R.color.link_blue))
+            tvTeacher.setOnClickListener { searchFor(item.teacher); dialog.dismiss() }
             tvTeacher.setOnLongClickListener {
                 try {
-                    val query = "${item.teacher} ЮФУ"
-                    val url = "https://www.google.com/search?q=${android.net.Uri.encode(query)}"
-                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
-                    intent.data = android.net.Uri.parse(url)
-                    startActivity(intent)
+                    val url = "https://www.google.com/search?q=${android.net.Uri.encode("${item.teacher} ЮФУ")}"
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                     dialog.dismiss()
-                } catch (e: Exception) {
-                    // На случай, если нет браузера (маловероятно, но безопасно)
-                    Toast.makeText(this, "Не удалось открыть браузер", Toast.LENGTH_SHORT).show()
-                }
-                true // Важно вернуть true
+                } catch (e: Exception) {}
+                true
             }
         }
 
-        // Аудитория
         tvRoom.text = "🚪 Аудитория: ${item.room} (${item.locationType})"
-        if (!item.room.startsWith("не назначена")) {
-            tvRoom.setTextColor(getColor(R.color.link_blue)) // Делаем синим
-            tvRoom.setOnClickListener {
-                searchFor(item.room)
-                dialog.dismiss()
-            }
+        if (!item.room.startsWith("не назначена") && item.room != "Online") {
+            tvRoom.setTextColor(getColor(R.color.link_blue))
+            tvRoom.setOnClickListener { searchFor(item.room); dialog.dismiss() }
         }
 
-        // Группа - НЕ кликабельна
         tvGroup.text = "👥 Группа: ${item.groupCode ?: "не указана"} (участников: ${item.teamSize ?: "?"})"
-
         dialog.show()
     }
+
     private fun searchFor(name: String) {
-        // Проверяем, что это не "пустые" значения
-        if (name == "не назначен" || name.startsWith("не назначена")) return
-
-        drawerLayout.openDrawer(GravityCompat.END) // Открываем боковое меню
+        drawerLayout.openDrawer(GravityCompat.END)
         val etSearch = findViewById<NavigationView>(R.id.navigationView).findViewById<EditText>(R.id.etSearch)
-
-        // Устанавливаем текст в поле
         etSearch.setText(name)
-        // Перемещаем курсор в конец текста
         etSearch.setSelection(name.length)
-        // Явно запускаем поиск в ViewModel
         viewModel.search(name)
     }
-    @SuppressLint("ClickableViewAccessibility")
-    private fun setupNavigationListeners(mode: NavigationMode) {
-        // Универсальный GestureDetector, который умеет делать ВСЁ
-        val gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
 
-            // --- Долгое нажатие (работает всегда) ---
-            override fun onLongPress(e: MotionEvent) {
-                val childView = recyclerView.findChildViewUnder(e.x, e.y)
-                if (childView != null) {
-                    val position = recyclerView.getChildAdapterPosition(childView)
-                    if (position != RecyclerView.NO_POSITION) {
-                        val item = scheduleAdapter.currentList[position]
-                        if (item.subject != "Нет пары") {
-                            showLessonDetailsDialog(item)
-                        }
-                    }
+    private fun observeViewModel() {
+        val tvScheduleTitle = findViewById<TextView>(R.id.tvScheduleTitle)
+        val tvLastUpdate = findViewById<TextView>(R.id.tvLastUpdate)
+        val pbSearch = findViewById<NavigationView>(R.id.navigationView).findViewById<ProgressBar>(R.id.pbSearch)
+
+        viewModel.scheduleTitle.observe(this) { tvScheduleTitle.text = it }
+        viewModel.lastUpdateTime.observe(this) { tvLastUpdate.text = it }
+
+        viewModel.weeks.observe(this) { weeks ->
+            weeksAdapter.submitList(weeks) {
+                val currentWeekIndex = weeks.indexOfFirst { it.isSelected }
+                if (currentWeekIndex != -1) {
+                    val rvWeeks = findViewById<RecyclerView>(R.id.rvWeeks)
+                    (rvWeeks.layoutManager as? LinearLayoutManager)?.scrollToPositionWithOffset(currentWeekIndex, 0)
                 }
             }
+        }
 
-            // --- Тап по краю (работает только в режиме TOUCH) ---
-            override fun onSingleTapUp(e: MotionEvent): Boolean {
-                if (mode == NavigationMode.TOUCH) {
-                    val screenWidth = resources.displayMetrics.widthPixels
-                    if (e.x < screenWidth * 0.35) {
-                        viewModel.selectPreviousDay()
-                        return true
-                    }
-                    if (e.x > screenWidth * 0.65) {
-                        viewModel.selectNextDay()
-                        return true
-                    }
-                }
-                return false
+        viewModel.isRefreshing.observe(this) { isRefreshing ->
+            swipeRefreshLayout.isRefreshing = isRefreshing
+        }
+
+        viewModel.error.observe(this) { msg ->
+            Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+        }
+
+        viewModel.searchResults.observe(this) { searchResultsAdapter.submitList(it) }
+        viewModel.pinnedTargets.observe(this) { pinnedAdapter.submitList(it) }
+
+        viewModel.searchInProgress.observe(this) {
+            pbSearch.visibility = if (it) View.VISIBLE else View.GONE
+        }
+
+        viewModel.currentPagerPosition.observe(this) { pos ->
+            if (viewPager.currentItem != pos) {
+                viewPager.setCurrentItem(pos, false)
             }
-
-            // --- Свайп (работает только в режиме SWIPE) ---
-            override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
-                if (mode == NavigationMode.SWIPE && e1 != null) {
-                    val diffX = e2.x - e1.x
-                    val diffY = e2.y - e1.y
-                    if (abs(diffX) > abs(diffY) * 1.5) {
-                        if (abs(diffX) > 100 && abs(velocityX) > 100) {
-                            if (diffX > 0) {
-                                viewModel.selectPreviousDay()
-                            } else {
-                                viewModel.selectNextDay()
-                            }
-                            return true
-                        }
-                    }
-                }
-                return false
-            }
-        })
-
-        // Применяем наш универсальный детектор к RecyclerView
-        recyclerView.setOnTouchListener { _, event ->
-            // Передаем событие в детектор, но не "поглощаем" его,
-            // чтобы скролл и SwipeRefreshLayout продолжали работать.
-            gestureDetector.onTouchEvent(event)
-            false
         }
     }
-
 }

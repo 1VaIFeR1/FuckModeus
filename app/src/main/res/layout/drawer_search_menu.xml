@@ -4,9 +4,6 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <!-- ========================================== -->
-    <!-- ЭКРАН 1: ГЛАВНОЕ МЕНЮ (ПОИСК) -->
-    <!-- ========================================== -->
     <RelativeLayout
         android:id="@+id/layout_main_menu"
         android:layout_width="match_parent"
@@ -14,7 +11,6 @@
         android:padding="16dp"
         android:visibility="visible">
 
-        <!-- КНОПКА ПЕРЕХОДА В НАСТРОЙКИ (ВНИЗУ) -->
         <LinearLayout
             android:id="@+id/btnGoToSettings"
             android:layout_width="match_parent"
@@ -42,7 +38,6 @@
                 android:textColor="?attr/colorOnSurface"/>
         </LinearLayout>
 
-        <!-- СПИСОК ПОИСКА (НАД КНОПКОЙ) -->
         <ScrollView
             android:layout_width="match_parent"
             android:layout_height="match_parent"
@@ -56,7 +51,6 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
-                <!-- Поле ввода -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -122,9 +116,6 @@
         </ScrollView>
     </RelativeLayout>
 
-    <!-- ========================================== -->
-    <!-- ЭКРАН 2: НАСТРОЙКИ (СКРЫТ ПО УМОЛЧАНИЮ) -->
-    <!-- ========================================== -->
     <LinearLayout
         android:id="@+id/layout_settings_menu"
         android:layout_width="match_parent"
@@ -134,7 +125,6 @@
         android:visibility="gone"
         android:background="#2F2F2F">
 
-        <!-- КНОПКА НАЗАД -->
         <LinearLayout
             android:id="@+id/btnBackToMenu"
             android:layout_width="match_parent"
@@ -149,7 +139,7 @@
                 android:layout_width="24dp"
                 android:layout_height="24dp"
                 android:src="@android:drawable/ic_menu_revert"
-                app:tint="?attr/colorControlNormal"/>
+                app:tint="#FFFFFF"/>
 
             <TextView
                 android:layout_width="wrap_content"
@@ -157,22 +147,22 @@
                 android:text="Назад"
                 android:textSize="18sp"
                 android:textStyle="bold"
+                android:textColor="#FFFFFF"
                 android:layout_marginStart="16dp"/>
         </LinearLayout>
 
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
-            android:background="?android:attr/listDivider"
+            android:background="#555555"
             android:layout_marginTop="8dp"
             android:layout_marginBottom="16dp"/>
 
-        <!-- ИСТОЧНИК ДАННЫХ -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Источник данных:"
-            android:textColor="?android:attr/textColorSecondary"
+            android:textColor="#AAAAAA"
             android:layout_marginBottom="8dp"/>
 
         <RadioGroup
@@ -186,6 +176,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="SFEDU Modeus (Требуется вход)"
+                android:textColor="#FFFFFF"
+                android:buttonTint="#FFFFFF"
                 android:paddingVertical="8dp"/>
 
             <RadioButton
@@ -193,28 +185,20 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="RDCenter (Без входа)"
+                android:textColor="#FFFFFF"
+                android:buttonTint="#FFFFFF"
                 android:paddingVertical="8dp"/>
         </RadioGroup>
 
-        <!-- ПЕРЕКЛЮЧАТЕЛИ -->
         <com.google.android.material.switchmaterial.SwitchMaterial
             android:id="@+id/switchShowEmpty"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Отображать 'Нет пары'"
+            android:textColor="#FFFFFF"
             android:paddingVertical="8dp"
             android:layout_marginBottom="8dp"/>
 
-        <com.google.android.material.switchmaterial.SwitchMaterial
-            android:id="@+id/switchNavMode"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Навигация по касанию"
-            android:paddingVertical="8dp"
-            android:layout_marginBottom="32dp"/>
-
-        <!-- КНОПКА ВЫХОДА (КРАСНАЯ) -->
-        <!-- Spacer чтобы прижать кнопку вниз (опционально), или просто в потоке -->
         <Space
             android:layout_width="match_parent"
             android:layout_height="0dp"

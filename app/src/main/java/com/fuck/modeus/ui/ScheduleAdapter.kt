@@ -13,8 +13,9 @@ import com.fuck.modeus.data.ScheduleItem
 private const val VIEW_TYPE_NORMAL = 1
 private const val VIEW_TYPE_EMPTY = 2
 
-// Адаптер больше не принимает никаких аргументов в конструктор
-class ScheduleAdapter : ListAdapter<ScheduleItem, RecyclerView.ViewHolder>(DiffCallback()) {
+class ScheduleAdapter(
+    private val onLongClick: (ScheduleItem) -> Unit
+) : ListAdapter<ScheduleItem, RecyclerView.ViewHolder>(DiffCallback()) {
 
     override fun getItemViewType(position: Int): Int {
         return if (getItem(position).subject == "Нет пары") VIEW_TYPE_EMPTY else VIEW_TYPE_NORMAL
@@ -23,7 +24,8 @@ class ScheduleAdapter : ListAdapter<ScheduleItem, RecyclerView.ViewHolder>(DiffC
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
         return if (viewType == VIEW_TYPE_NORMAL) {
             val view = LayoutInflater.from(parent.context).inflate(R.layout.item_schedule, parent, false)
-            NormalViewHolder(view)
+            // Передаем onLongClick в ViewHolder
+            NormalViewHolder(view, onLongClick)
         } else {
             val view = LayoutInflater.from(parent.context).inflate(R.layout.item_empty_lesson, parent, false)
             EmptyViewHolder(view)
@@ -40,8 +42,11 @@ class ScheduleAdapter : ListAdapter<ScheduleItem, RecyclerView.ViewHolder>(DiffC
     }
 
     // --- ViewHolder для обычной пары ---
-    class NormalViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        // Находим все View из item_schedule.xml
+    class NormalViewHolder(
+        itemView: View,
+        private val onLongClick: (ScheduleItem) -> Unit
+    ) : RecyclerView.ViewHolder(itemView) {
+
         private val tvSubject: TextView = itemView.findViewById(R.id.tvSubject)
         private val tvModule: TextView = itemView.findViewById(R.id.tvModule)
         private val tvTime: TextView = itemView.findViewById(R.id.tvTime)
@@ -49,7 +54,6 @@ class ScheduleAdapter : ListAdapter<ScheduleItem, RecyclerView.ViewHolder>(DiffC
         private val tvRoom: TextView = itemView.findViewById(R.id.tvRoom)
         private val tvType: TextView = itemView.findViewById(R.id.tvType)
 
-        // Метод для заполнения View данными
         fun bind(item: ScheduleItem) {
             tvSubject.text = item.subject
             if (!item.moduleShortName.isNullOrBlank()) {
@@ -61,6 +65,7 @@ class ScheduleAdapter : ListAdapter<ScheduleItem, RecyclerView.ViewHolder>(DiffC
             tvTime.text = "⏰ ${item.startTime} - ${item.endTime} | 📅 ${item.date}"
             tvTeacher.text = "🧑‍🏫 ${item.teacher}"
             tvRoom.text = "🚪 ${item.room}"
+
             val typeText = when (item.type) {
                 "Лекция" -> "🎓 Лекция"
                 "Практика" -> "✍️ Практика"
@@ -68,6 +73,12 @@ class ScheduleAdapter : ListAdapter<ScheduleItem, RecyclerView.ViewHolder>(DiffC
                 else -> "⚡ ${item.type}"
             }
             tvType.text = typeText
+
+            // Устанавливаем слушатель долгого нажатия
+            itemView.setOnLongClickListener {
+                onLongClick(item)
+                true // true означает, что событие поглощено
+            }
         }
     }
 
@@ -75,13 +86,11 @@ class ScheduleAdapter : ListAdapter<ScheduleItem, RecyclerView.ViewHolder>(DiffC
     class EmptyViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val tvTime: TextView = itemView.findViewById(R.id.tvEmptyLessonTime)
 
-        // ВОТ НЕДОСТАЮЩИЙ МЕТОД bind
         fun bind(item: ScheduleItem) {
             tvTime.text = "${item.startTime} - ${item.endTime}"
         }
     }
 
-    // --- DiffCallback с РЕАЛИЗОВАННЫМИ МЕТОДАМИ ---
     class DiffCallback : DiffUtil.ItemCallback<ScheduleItem>() {
         override fun areItemsTheSame(oldItem: ScheduleItem, newItem: ScheduleItem): Boolean {
             return oldItem.id == newItem.id

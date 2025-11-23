@@ -22,39 +22,31 @@ import java.io.InputStreamReader
 import java.text.SimpleDateFormat
 import java.util.*
 
-enum class SwipeDirection { LEFT, RIGHT, NONE }
 enum class NavigationMode { TOUCH, SWIPE }
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val TAG = "FuckModeus_DEBUG"
 
-    // --- Константы семестров ---
-    private val AUTUMN_START_MONTH = Calendar.SEPTEMBER // Сентябрь (8)
-    private val AUTUMN_START_DAY = 1
-    private val AUTUMN_END_MONTH = Calendar.FEBRUARY // Февраль (1)
-    private val AUTUMN_END_DAY = 5
-
-    private val SPRING_START_MONTH = Calendar.FEBRUARY // Февраль (1)
-    private val SPRING_START_DAY = 7 // Весна начинается с 7 февраля
-    private val SPRING_END_MONTH = Calendar.AUGUST // Август (7)
-    private val SPRING_END_DAY = 31
-
     private val timeSlots = mapOf(
         "08:00" to "09:35", "09:50" to "11:25", "11:55" to "13:30",
         "13:45" to "15:20", "15:50" to "17:25", "17:35" to "19:10",
         "19:15" to "20:50", "20:55" to "21:40"
     )
-    private var fullSchedule: List<ScheduleItem> = emptyList()
-    private val _filteredSchedule = MutableLiveData<List<ScheduleItem>>()
-    val filteredSchedule: LiveData<List<ScheduleItem>> = _filteredSchedule
+
+    private val _scheduleMap = MutableLiveData<Map<Long, List<ScheduleItem>>>()
+    val scheduleMap: LiveData<Map<Long, List<ScheduleItem>>> = _scheduleMap
+
+    private var fullRawSchedule: List<ScheduleItem> = emptyList()
+
+    var semesterStartDate: Date = Calendar.getInstance().time
+        private set
 
     private val _error = MutableLiveData<String>()
     val error: LiveData<String> = _error
     private val _lastUpdateTime = MutableLiveData<String>()
     val lastUpdateTime: LiveData<String> = _lastUpdateTime
 
-    // Search
     private var allTargets = listOf<ScheduleTarget>()
     private val _searchResults = MutableLiveData<List<ScheduleTarget>>()
     val searchResults: LiveData<List<ScheduleTarget>> = _searchResults
@@ -66,114 +58,178 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _searchInProgress = MutableLiveData<Boolean>()
     val searchInProgress: LiveData<Boolean> = _searchInProgress
 
-    // Dates
     private val _weeks = MutableLiveData<List<WeekItem>>()
     val weeks: LiveData<List<WeekItem>> = _weeks
-    private val _days = MutableLiveData<List<DayItem>>()
-    val days: LiveData<List<DayItem>> = _days
-    private var selectedDate: Date = Calendar.getInstance().time
 
-    // UX
-    private val _swipeDirection = MutableLiveData(SwipeDirection.NONE)
-    val swipeDirection: LiveData<SwipeDirection> = _swipeDirection
-    private val _navigationMode = MutableLiveData(NavigationMode.TOUCH)
-    val navigationMode: LiveData<NavigationMode> = _navigationMode
+    private val _currentPagerPosition = MutableLiveData<Int>()
+    val currentPagerPosition: LiveData<Int> = _currentPagerPosition
+
     private val _showEmptyLessons = MutableLiveData(true)
     val showEmptyLessons: LiveData<Boolean> = _showEmptyLessons
+
+    private val _isRefreshing = MutableLiveData<Boolean>()
+    val isRefreshing: LiveData<Boolean> = _isRefreshing
+
+    private val _navigationMode = MutableLiveData(NavigationMode.TOUCH)
+    val navigationMode: LiveData<NavigationMode> = _navigationMode
 
     private val cacheFileName = "schedule_cache_v2.json"
     private val sharedPreferences = application.getSharedPreferences("schedule_prefs", Application.MODE_PRIVATE)
 
     init {
         Log.d(TAG, "ViewModel: init")
+        calculateLegacySemesterStart()
         loadAllIds()
-        loadNavigationMode()
         loadShowEmptyLessonsMode()
+        loadNavigationMode()
     }
 
-    // --- ПУБЛИЧНЫЕ МЕТОДЫ НАСТРОЕК ---
+    private fun calculateLegacySemesterStart() {
+        val calendar = Calendar.getInstance()
+        val today = calendar.time
 
-    fun setShowEmptyLessons(shouldShow: Boolean) {
-        if (_showEmptyLessons.value == shouldShow) return
-        _showEmptyLessons.value = shouldShow
-        sharedPreferences.edit().putBoolean("show_empty_lessons", shouldShow).apply()
-        filterScheduleForSelectedDate()
-    }
+        calendar.time = today
+        val currentMonth = calendar.get(Calendar.MONTH)
+        val currentYear = calendar.get(Calendar.YEAR)
 
-    fun setNavigationMode(isTouchMode: Boolean) {
-        val newMode = if (isTouchMode) NavigationMode.TOUCH else NavigationMode.SWIPE
-        _navigationMode.postValue(newMode)
-        val modeName = if (isTouchMode) NavigationMode.TOUCH.name else NavigationMode.SWIPE.name
-        sharedPreferences.edit().putString("nav_mode", modeName).apply()
-    }
+        val firstSemesterStartCalendar = Calendar.getInstance().apply {
+            set(Calendar.MONTH, Calendar.SEPTEMBER)
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
 
-    private fun loadShowEmptyLessonsMode() {
-        val shouldShow = sharedPreferences.getBoolean("show_empty_lessons", true)
-        _showEmptyLessons.postValue(shouldShow)
-    }
-
-    private fun loadNavigationMode() {
-        val modeName = sharedPreferences.getString("nav_mode", NavigationMode.TOUCH.name)
-        val mode = try {
-            NavigationMode.valueOf(modeName ?: NavigationMode.TOUCH.name)
-        } catch (e: Exception) {
-            NavigationMode.TOUCH
+            if (currentMonth < Calendar.SEPTEMBER) {
+                set(Calendar.YEAR, currentYear - 1)
+            } else {
+                set(Calendar.YEAR, currentYear)
+            }
         }
-        _navigationMode.postValue(mode)
-    }
 
-    // --- ЛОГИКА СЕМЕСТРОВ ---
+        val secondSemesterStartCalendar = Calendar.getInstance().apply {
+            set(Calendar.YEAR, firstSemesterStartCalendar.get(Calendar.YEAR))
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
 
-    data class SemesterBounds(
-        val apiMinDate: String,
-        val apiMaxDate: String,
-        val semesterStartDate: Date,
-        val description: String
-    )
+            if (today.after(firstSemesterStartCalendar.time)) {
+                set(Calendar.YEAR, firstSemesterStartCalendar.get(Calendar.YEAR) + 1)
+            }
+            set(Calendar.MONTH, Calendar.FEBRUARY)
+            set(Calendar.DAY_OF_MONTH, 8)
+        }
 
-    private fun getSemesterBounds(): SemesterBounds {
-        val cal = Calendar.getInstance()
-        val currentYear = cal.get(Calendar.YEAR)
-        val currentMonth = cal.get(Calendar.MONTH)
-        val currentDay = cal.get(Calendar.DAY_OF_MONTH)
-
-        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.getDefault())
-        val startCal = Calendar.getInstance()
-        val endCal = Calendar.getInstance()
-        val desc: String
-
-        val isAutumnCurrentYear = currentMonth >= Calendar.AUGUST
-        val isAutumnNextYearPart = (currentMonth == Calendar.JANUARY) || (currentMonth == Calendar.FEBRUARY && currentDay <= 6)
-
-        if (isAutumnCurrentYear || isAutumnNextYearPart) {
-            desc = "Осень"
-            val startYear = if (isAutumnNextYearPart) currentYear - 1 else currentYear
-            startCal.set(startYear, AUTUMN_START_MONTH, AUTUMN_START_DAY, 0, 0, 0)
-            endCal.set(startYear + 1, AUTUMN_END_MONTH, AUTUMN_END_DAY, 23, 59, 59)
+        semesterStartDate = if (today.after(secondSemesterStartCalendar.time)) {
+            secondSemesterStartCalendar.time
         } else {
-            desc = "Весна"
-            startCal.set(currentYear, SPRING_START_MONTH, SPRING_START_DAY, 0, 0, 0)
-            endCal.set(currentYear, SPRING_END_MONTH, SPRING_END_DAY, 23, 59, 59)
+            firstSemesterStartCalendar.time
         }
-
-        return SemesterBounds(
-            apiMinDate = sdf.format(startCal.time),
-            apiMaxDate = sdf.format(endCal.time),
-            semesterStartDate = startCal.time,
-            description = "$desc ${startCal.get(Calendar.YEAR)}"
-        )
     }
 
-    // --- ЗАГРУЗКА РАСПИСАНИЯ ---
+    private fun generateWeeks(items: List<ScheduleItem>) {
+        val weekList = mutableListOf<WeekItem>()
+
+        // Если пар нет - показываем только 1 пустую неделю
+        if (items.isEmpty()) {
+            val start = semesterStartDate
+            val cal = Calendar.getInstance().apply { time = start }
+            // Находим понедельник
+            while (cal.get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) {
+                cal.add(Calendar.DAY_OF_MONTH, -1)
+            }
+            val monday = cal.time
+            cal.add(Calendar.DAY_OF_MONTH, 6)
+            val sunday = cal.time
+            val dateFormat = SimpleDateFormat("dd", Locale("ru"))
+            weekList.add(WeekItem(1, monday, sunday, "1 неделя (${dateFormat.format(monday)}-${dateFormat.format(sunday)})", true))
+            _weeks.postValue(weekList)
+            return
+        }
+
+        // 1. Находим точное время последней пары
+        val maxTime = items.maxOf { it.fullStartDate }
+
+        // 2. Определяем конец последней недели
+        val limitCal = Calendar.getInstance().apply { timeInMillis = maxTime }
+        // Докручиваем до конца воскресенья этой недели
+        while (limitCal.get(Calendar.DAY_OF_WEEK) != Calendar.SUNDAY) {
+            limitCal.add(Calendar.DAY_OF_MONTH, 1)
+        }
+        // Ставим конец дня
+        limitCal.set(Calendar.HOUR_OF_DAY, 23)
+        limitCal.set(Calendar.MINUTE, 59)
+        limitCal.set(Calendar.SECOND, 59)
+        val hardLimit = limitCal.time
+
+        // 3. Настраиваем итератор на начало семестра
+        val weekCalendar = Calendar.getInstance().apply {
+            time = semesterStartDate
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+
+        var weekNumber = 1
+        val dateFormat = SimpleDateFormat("dd", Locale("ru"))
+        val today = Calendar.getInstance().time
+
+        // 4. Генерируем недели, пока не упремся в hardLimit
+        while (weekCalendar.time.before(hardLimit) || weekCalendar.time.time == hardLimit.time) {
+            // Ищем понедельник
+            weekCalendar.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+            val startDate = weekCalendar.time
+
+            // Ищем воскресенье
+            weekCalendar.set(Calendar.DAY_OF_WEEK, Calendar.SUNDAY)
+            if (startDate.after(weekCalendar.time)) {
+                weekCalendar.add(Calendar.DAY_OF_MONTH, 7)
+            }
+            val endDate = weekCalendar.time
+
+            val isSelected = (today.time >= startDate.time && today.time <= endDate.time)
+
+            weekList.add(
+                WeekItem(
+                    weekNumber = weekNumber,
+                    startDate = startDate,
+                    endDate = endDate,
+                    displayableString = "$weekNumber неделя (${dateFormat.format(startDate)}-${dateFormat.format(endDate)})",
+                    isSelected = isSelected
+                )
+            )
+
+            // Если мы достигли недели, содержащей hardLimit (последнюю пару), прерываем
+            if (endDate.time >= hardLimit.time) {
+                break
+            }
+
+            weekNumber++
+            // Переход к следующему понедельнику
+            weekCalendar.add(Calendar.DAY_OF_MONTH, 1)
+        }
+
+        if (weekList.isNotEmpty() && weekList.none { it.isSelected }) {
+            if (today.after(weekList.last().endDate)) {
+                weekList.last().isSelected = true
+            } else {
+                weekList.first().isSelected = true
+            }
+        }
+
+        _weeks.postValue(weekList)
+    }
 
     fun loadSchedule(personId: String) {
-        Log.d(TAG, "ViewModel: loadSchedule called for ID: $personId")
+        _isRefreshing.postValue(true)
 
         val apiSource = ApiSettings.getApiSource(getApplication())
-        Log.d(TAG, "ViewModel: Selected API Source: $apiSource")
         if (apiSource == ApiSource.SFEDU) {
             val token = TokenManager.getToken(getApplication())
             if (token == null) {
+                _isRefreshing.postValue(false)
                 _error.postValue("Требуется вход через Microsoft")
                 openLoginActivity(personId)
                 return
@@ -182,13 +238,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             try {
-                val bounds = getSemesterBounds()
-                Log.d(TAG, "ViewModel: Семестр: ${bounds.description} (${bounds.apiMinDate} - ${bounds.apiMaxDate})")
+                calculateLegacySemesterStart()
+
+                val reqCal = Calendar.getInstance().apply { time = semesterStartDate }
+                val minDateStr = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.getDefault()).format(reqCal.time)
+
+                reqCal.add(Calendar.YEAR, 1)
+                val maxDateStr = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.getDefault()).format(reqCal.time)
 
                 val requestBody = JsonObject().apply {
                     addProperty("size", 3000)
-                    addProperty("timeMin", bounds.apiMinDate)
-                    addProperty("timeMax", bounds.apiMaxDate)
+                    addProperty("timeMin", minDateStr)
+                    addProperty("timeMax", maxDateStr)
                     val ids = JsonArray()
                     ids.add(personId)
                     add("attendeePersonId", ids)
@@ -198,171 +259,185 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val responseBody = if (apiSource == ApiSource.SFEDU) {
                     api.getScheduleSfedu(requestBody)
                 } else {
-                    // RDCenter может требовать старый формат (просто size, min, max без ID)
-                    // Но обычно они совпадают. Попробуем отослать тот же JSON.
                     api.getScheduleRdCenter(requestBody)
                 }
                 val responseString = responseBody.string()
 
-                Log.d(TAG, "ViewModel: Ответ получен. Длина: ${responseString.length}")
-
                 if (responseString.isNotBlank()) {
                     val scheduleResponse = Gson().fromJson(responseString, ScheduleResponse::class.java)
                     val scheduleItems = parseResponseV2(scheduleResponse)
-                    Log.d(TAG, "ViewModel: Распаршено пар: ${scheduleItems.size}")
-
-                    fullSchedule = scheduleItems.sortedBy { it.fullStartDate }
+                    val sortedItems = scheduleItems.sortedBy { it.fullStartDate }
 
                     val targetName = allTargets.find { it.person_id == personId }?.name ?: "Расписание"
                     val currentTime = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.getDefault()).format(Date())
 
-                    val dataToCache = CachedData(
-                        targetId = personId,
-                        targetName = targetName,
-                        lastUpdateTime = currentTime,
-                        scheduleJsonResponse = responseString
-                    )
+                    val dataToCache = CachedData(personId, targetName, currentTime, responseString)
                     saveDataToFile(dataToCache)
 
                     _scheduleTitle.postValue(targetName)
                     _lastUpdateTime.postValue("Последнее обновление: $currentTime")
-                    processNewScheduleData()
+
+                    processRawSchedule(sortedItems)
+                    setInitialPage()
                 } else {
-                    Log.e(TAG, "ViewModel: Ответ сервера пустой")
-                    _error.postValue("Ошибка: получен пустой ответ от сервера.")
-                }
-            } catch (e: retrofit2.HttpException) {
-                if (e.code() == 401) {
-                    Log.w(TAG, "ViewModel: 401 Unauthorized. Сбрасываем токен.")
-                    TokenManager.clearToken(getApplication())
-                    _error.postValue("Сессия истекла. Пожалуйста, войдите снова.")
-                    openLoginActivity(personId)
-                } else {
-                    _error.postValue("Ошибка сервера: ${e.code()}")
-                    loadDataFromFile()
+                    _error.postValue("Ошибка: получен пустой ответ")
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "ViewModel: Ошибка сети/парсинга", e)
-                _error.postValue("Ошибка сети: ${e.message}")
-                loadDataFromFile()
+                if (e is retrofit2.HttpException && e.code() == 401) {
+                    TokenManager.clearToken(getApplication())
+                    _error.postValue("Сессия истекла")
+                    openLoginActivity(personId)
+                } else {
+                    _error.postValue("Ошибка обновления: ${e.message}")
+                    loadDataFromFile()
+                }
+            } finally {
+                _isRefreshing.postValue(false)
             }
         }
     }
 
-    // --- ОБНОВЛЕНИЕ (SWIPE REFRESH) ---
+    private fun processRawSchedule(rawItems: List<ScheduleItem>) {
+        fullRawSchedule = rawItems
+
+        generateWeeks(rawItems)
+
+        if (rawItems.isEmpty()) {
+            _scheduleMap.postValue(emptyMap())
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.Default) {
+            val map = mutableMapOf<Long, List<ScheduleItem>>()
+            val showEmpty = _showEmptyLessons.value ?: true
+            val grouped = rawItems.groupBy { getStartOfDay(it.fullStartDate) }
+
+            if (showEmpty) {
+                grouped.forEach { (dayMillis, items) ->
+                    val filledList = mutableListOf<ScheduleItem>()
+                    val itemsByTime = items.associateBy { it.startTime }
+                    var pairCounter = 1
+
+                    timeSlots.forEach { (start, end) ->
+                        val pairName = "${pairCounter++} пара"
+                        val item = itemsByTime[start]
+                        if (item != null) {
+                            filledList.add(item)
+                        } else {
+                            filledList.add(createEmptyLesson(start, end, pairName))
+                        }
+                    }
+                    map[dayMillis] = filledList
+                }
+            } else {
+                map.putAll(grouped)
+            }
+            _scheduleMap.postValue(map)
+        }
+    }
+
+    private fun setInitialPage() {
+        val today = getStartOfDay(System.currentTimeMillis())
+
+        val startCal = Calendar.getInstance().apply { time = semesterStartDate }
+        toStartOfDay(startCal)
+        startCal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+        if (startCal.time.after(semesterStartDate)) {
+            startCal.add(Calendar.DAY_OF_MONTH, -7)
+        }
+        val pagerStart = startCal.timeInMillis
+
+        val diff = today - pagerStart
+        val days = (diff / (1000 * 60 * 60 * 24)).toInt()
+
+        if (days >= 0) {
+            _currentPagerPosition.postValue(days)
+        } else {
+            _currentPagerPosition.postValue(0)
+        }
+    }
+
+    fun onPageChanged(position: Int) {
+        _currentPagerPosition.value = position
+
+        val startCal = Calendar.getInstance().apply { time = semesterStartDate }
+        toStartOfDay(startCal)
+        startCal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+        if (startCal.time.after(semesterStartDate)) {
+            startCal.add(Calendar.DAY_OF_MONTH, -7)
+        }
+
+        startCal.add(Calendar.DAY_OF_YEAR, position)
+        val currentDate = startCal.time
+
+        updateSelectedWeek(currentDate)
+    }
+
+    private fun toStartOfDay(cal: Calendar) {
+        cal.set(Calendar.HOUR_OF_DAY, 0)
+        cal.set(Calendar.MINUTE, 0)
+        cal.set(Calendar.SECOND, 0)
+        cal.set(Calendar.MILLISECOND, 0)
+    }
+
+    private fun getStartOfDay(time: Long): Long {
+        val cal = Calendar.getInstance()
+        cal.timeInMillis = time
+        toStartOfDay(cal)
+        return cal.timeInMillis
+    }
+
+    private fun updateSelectedWeek(currentDate: Date) {
+        val currentWeeks = _weeks.value ?: return
+        val updated = currentWeeks.map { week ->
+            val isSelected = currentDate.time >= week.startDate.time && currentDate.time <= week.endDate.time
+            week.copy(isSelected = isSelected)
+        }
+        _weeks.postValue(updated)
+    }
+
+    private fun createEmptyLesson(startTime: String, endTime: String, pairName: String): ScheduleItem {
+        return ScheduleItem(UUID.randomUUID().toString(), 0L, "Нет пары", pairName, startTime, endTime, "", "", "", "", null, null, null, "")
+    }
+
+    fun getLessonsForDate(dateMillis: Long): List<ScheduleItem> {
+        val dayStart = getStartOfDay(dateMillis)
+        return _scheduleMap.value?.get(dayStart) ?: emptyList()
+    }
 
     fun refreshSchedule() {
-        Log.d(TAG, "ViewModel: refreshSchedule called")
+        _isRefreshing.postValue(true)
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val fileInputStream = getApplication<Application>().openFileInput(cacheFileName)
                 val jsonString = fileInputStream.reader().readText()
                 fileInputStream.close()
                 val cachedData = Gson().fromJson(jsonString, CachedData::class.java)
-
-                // Вызываем загрузку с ID из кеша
                 loadSchedule(cachedData.targetId)
             } catch (e: Exception) {
-                Log.e(TAG, "ViewModel: Не могу обновить: кеш пуст или ошибка чтения", e)
-                _error.postValue("Сначала выберите расписание в поиске")
+                _isRefreshing.postValue(false)
+                _error.postValue("Сначала выберите расписание")
             }
         }
     }
-
-    // --- ГЕНЕРАЦИЯ НЕДЕЛЬ (ИСПРАВЛЕНО) ---
-
-    private fun generateWeeks() {
-        if (fullSchedule.isEmpty()) {
-            _weeks.postValue(emptyList())
-            return
-        }
-
-        viewModelScope.launch(Dispatchers.Default) {
-            val bounds = getSemesterBounds()
-            val semesterStartDate = bounds.semesterStartDate
-
-            // 1. Находим дату САМОЙ ПОСЛЕДНЕЙ ПАРЫ (в миллисекундах)
-            val maxLessonTime = fullSchedule.maxOfOrNull { it.fullStartDate } ?: System.currentTimeMillis()
-
-            // 2. Вычисляем границу цикла (конец недели, в которой эта последняя пара)
-            val limitCal = Calendar.getInstance().apply { timeInMillis = maxLessonTime }
-            // Устанавливаем на Воскресенье
-            limitCal.set(Calendar.DAY_OF_WEEK, Calendar.SUNDAY)
-            // Если из-за особенностей Calendar API (воскресенье=1) мы ушли назад во времени - добавляем 7 дней
-            if (limitCal.timeInMillis < maxLessonTime) {
-                limitCal.add(Calendar.DAY_OF_MONTH, 7)
-            }
-            // Ставим конец дня, чтобы сравнение .before() сработало корректно
-            limitCal.set(Calendar.HOUR_OF_DAY, 23)
-            limitCal.set(Calendar.MINUTE, 59)
-
-            val weekList = mutableListOf<WeekItem>()
-
-            // Календарь для итерации (начинаем с начала семестра)
-            val weekCalendar = Calendar.getInstance().apply {
-                time = semesterStartDate
-                set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
-            }
-
-            if (weekCalendar.time.after(semesterStartDate)) {
-                weekCalendar.add(Calendar.DAY_OF_MONTH, -7)
-            }
-
-            var weekNumber = 1
-            val dateFormat = SimpleDateFormat("dd", Locale("ru"))
-            val today = Calendar.getInstance().time
-
-            // 3. Цикл работает, пока начало недели меньше предельной даты (последней пары)
-            while (weekCalendar.time.before(limitCal.time)) {
-                val startDate = weekCalendar.time
-                val endWeekCal = Calendar.getInstance().apply { time = startDate; add(Calendar.DAY_OF_MONTH, 6) }
-                val endDate = endWeekCal.time
-
-                weekList.add(
-                    WeekItem(
-                        weekNumber = weekNumber,
-                        startDate = startDate,
-                        endDate = endDate,
-                        displayableString = "$weekNumber неделя (${dateFormat.format(startDate)}-${dateFormat.format(endDate)})",
-                        isSelected = today in startDate..endDate
-                    )
-                )
-
-                weekNumber++
-                weekCalendar.add(Calendar.DAY_OF_MONTH, 7)
-            }
-
-            // Выбор активной недели, если ничего не выбрано
-            if (weekList.none { it.isSelected }) {
-                if (today.after(weekList.last().endDate)) weekList.last().isSelected = true
-                else weekList.first().isSelected = true
-            }
-
-            _weeks.postValue(weekList)
-        }
-    }
-
-    // --- ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ---
 
     fun loadInitialSchedule() { loadDataFromFile() }
 
-    private fun openLoginActivity(personId: String? = null) {
-        val context = getApplication<Application>()
-        val intent = Intent(context, LoginActivity::class.java)
+    private fun openLoginActivity(personId: String?) {
+        val intent = Intent(getApplication(), LoginActivity::class.java)
         intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        if (personId != null) intent.putExtra("TARGET_ID", personId)
-        context.startActivity(intent)
+        if(personId!=null) intent.putExtra("TARGET_ID", personId)
+        getApplication<Application>().startActivity(intent)
     }
 
-    private fun saveDataToFile(cachedData: CachedData) {
+    private fun saveDataToFile(data: CachedData) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val jsonString = Gson().toJson(cachedData)
+                val jsonString = Gson().toJson(data)
                 val fileOutputStream = getApplication<Application>().openFileOutput(cacheFileName, Context.MODE_PRIVATE)
                 fileOutputStream.write(jsonString.toByteArray())
                 fileOutputStream.close()
-                Log.d(TAG, "ViewModel: Кеш успешно сохранен")
-            } catch (e: Exception) { Log.e(TAG, "Error saving cache", e) }
+            } catch (e: Exception) {}
         }
     }
 
@@ -374,13 +449,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 fileInputStream.close()
                 val cachedData = Gson().fromJson(jsonString, CachedData::class.java)
                 val scheduleResponse = Gson().fromJson(cachedData.scheduleJsonResponse, ScheduleResponse::class.java)
-                val scheduleItems = parseResponseV2(scheduleResponse)
-                fullSchedule = scheduleItems.sortedBy { it.fullStartDate }
+                val items = parseResponseV2(scheduleResponse).sortedBy { it.fullStartDate }
+
                 _scheduleTitle.postValue(cachedData.targetName)
                 _lastUpdateTime.postValue("Последнее обновление: ${cachedData.lastUpdateTime}")
-                processNewScheduleData()
-                Log.d(TAG, "ViewModel: Данные загружены из кеша")
-            } catch (e: Exception) { Log.e(TAG, "Cache error", e) }
+
+                processRawSchedule(items)
+                setInitialPage()
+            } catch (e: Exception) { _error.postValue("Кеш пуст") }
         }
     }
 
@@ -442,11 +518,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return scheduleItems
     }
 
-    private fun processNewScheduleData() {
-        selectDay(DayItem(Date(), "", "", true), isInitial = true)
-        generateWeeks()
-    }
-
     private fun loadAllIds() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -497,80 +568,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _pinnedTargets.postValue(allTargets.filter { it.isPinned })
     }
 
-    fun selectWeek(week: WeekItem) {
-        _weeks.value?.let { currentWeeks ->
-            val updatedWeeks = currentWeeks.map { it.copy(isSelected = it == week) }
-            _weeks.postValue(updatedWeeks)
+    fun setShowEmptyLessons(shouldShow: Boolean) {
+        if (_showEmptyLessons.value == shouldShow) return
+        _showEmptyLessons.value = shouldShow
+        sharedPreferences.edit().putBoolean("show_empty_lessons", shouldShow).apply()
+        processRawSchedule(fullRawSchedule)
+    }
+
+    fun setNavigationMode(isTouchMode: Boolean) {
+        val newMode = if (isTouchMode) NavigationMode.TOUCH else NavigationMode.SWIPE
+        _navigationMode.postValue(newMode)
+        val modeName = newMode.name
+        sharedPreferences.edit().putString("nav_mode", modeName).apply()
+    }
+
+    private fun loadShowEmptyLessonsMode() {
+        val shouldShow = sharedPreferences.getBoolean("show_empty_lessons", true)
+        _showEmptyLessons.postValue(shouldShow)
+    }
+
+    private fun loadNavigationMode() {
+        val modeName = sharedPreferences.getString("nav_mode", NavigationMode.TOUCH.name)
+        val mode = try {
+            NavigationMode.valueOf(modeName ?: NavigationMode.TOUCH.name)
+        } catch (e: Exception) {
+            NavigationMode.TOUCH
         }
-        val mondayOfWeek = DayItem(week.startDate, "", "", true)
-        selectDay(mondayOfWeek)
-    }
-
-    fun selectDay(day: DayItem, isInitial: Boolean = false) {
-        selectedDate = day.date
-        val calendar = Calendar.getInstance().apply { time = day.date }
-        val dayOfWeekInCalendar = calendar.get(Calendar.DAY_OF_WEEK)
-        val firstDayOfWeek = if (dayOfWeekInCalendar == Calendar.SUNDAY) Calendar.MONDAY - 7 else Calendar.MONDAY
-        calendar.set(Calendar.DAY_OF_WEEK, firstDayOfWeek)
-        val newDays = (0..6).map {
-            val date = calendar.time
-            DayItem(date, SimpleDateFormat("EE", Locale("ru")).format(date).capitalize(Locale.ROOT), SimpleDateFormat("d", Locale("ru")).format(date), isSameDay(date, selectedDate)).also { calendar.add(Calendar.DAY_OF_MONTH, 1) }
-        }
-        _days.postValue(newDays)
-        filterScheduleForSelectedDate()
-        if (!isInitial) _swipeDirection.postValue(SwipeDirection.NONE)
-    }
-
-    private fun isSameDay(date1: Date, date2: Date): Boolean {
-        val cal1 = Calendar.getInstance().apply { time = date1 }
-        val cal2 = Calendar.getInstance().apply { time = date2 }
-        return cal1.get(Calendar.YEAR) == cal2.get(Calendar.YEAR) && cal1.get(Calendar.DAY_OF_YEAR) == cal2.get(Calendar.DAY_OF_YEAR)
-    }
-
-    private fun filterScheduleForSelectedDate() {
-        val lessonsForDay = fullSchedule.filter { isSameDay(Date(it.fullStartDate), selectedDate) }
-        if (_showEmptyLessons.value == false) { _filteredSchedule.postValue(lessonsForDay); return }
-        if (lessonsForDay.isEmpty()) { _filteredSchedule.postValue(emptyList()); return }
-        val lessonsMap = lessonsForDay.associateBy { it.startTime }
-        var pairCounter = 1
-        val fullDaySchedule = timeSlots.map { (startTime, endTime) ->
-            val pairName = "${pairCounter++} пара"
-            lessonsMap[startTime] ?: createEmptyLesson(startTime, endTime, pairName)
-        }
-        _filteredSchedule.postValue(fullDaySchedule)
-    }
-
-    private fun createEmptyLesson(startTime: String, endTime: String, pairName: String): ScheduleItem {
-        return ScheduleItem(UUID.randomUUID().toString(), 0L, "Нет пары", pairName, startTime, endTime, "", "", "", "", null, null, null, "")
-    }
-
-    fun selectNextDay() {
-        _swipeDirection.value = SwipeDirection.LEFT
-        val calendar = Calendar.getInstance().apply { time = selectedDate }
-        if (calendar.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY) {
-            val currentWeekIndex = _weeks.value?.indexOfFirst { it.isSelected } ?: -1
-            if (currentWeekIndex != -1 && currentWeekIndex + 1 < (_weeks.value?.size ?: 0)) {
-                selectWeek(_weeks.value!![currentWeekIndex + 1]); return
-            }
-        }
-        calendar.add(Calendar.DAY_OF_MONTH, 1)
-        selectDay(DayItem(calendar.time, "", "", false))
-    }
-
-    fun selectPreviousDay() {
-        _swipeDirection.value = SwipeDirection.RIGHT
-        val calendar = Calendar.getInstance().apply { time = selectedDate }
-        if (calendar.get(Calendar.DAY_OF_WEEK) == Calendar.MONDAY) {
-            val currentWeekIndex = _weeks.value?.indexOfFirst { it.isSelected } ?: -1
-            if (currentWeekIndex > 0) {
-                selectWeek(_weeks.value!![currentWeekIndex - 1])
-                val prevWeek = _weeks.value!![currentWeekIndex - 1]
-                val sundayCalendar = Calendar.getInstance().apply { time = prevWeek.endDate }
-                selectDay(DayItem(sundayCalendar.time, "", "", false))
-                return
-            }
-        }
-        calendar.add(Calendar.DAY_OF_MONTH, -1)
-        selectDay(DayItem(calendar.time, "", "", false))
+        _navigationMode.postValue(mode)
     }
 }
