@@ -1,6 +1,7 @@
 package com.fuck.modeus.ui
 
 import android.annotation.SuppressLint
+import android.content.DialogInterface // ВАЖНО: Добавил для диалога
 import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
@@ -15,6 +16,8 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.EditText
 import android.widget.ImageButton
+import android.widget.ImageView // ВАЖНО: Добавил
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.RadioButton
 import android.widget.RadioGroup
@@ -256,6 +259,9 @@ class MainActivity : AppCompatActivity() {
         val switchEmpty = navigationView.findViewById<SwitchMaterial>(R.id.switchShowEmpty)
         val btnLogout = navigationView.findViewById<View>(R.id.btnLogoutInternal)
 
+        // --- ДОБАВЛЕНО: Кнопка редактирования URL ---
+        val btnEditUrl = navigationView.findViewById<ImageView>(R.id.btnEditUrl)
+
         val currentSource = ApiSettings.getApiSource(this)
         if (currentSource == ApiSource.SFEDU) {
             rbSfedu.isChecked = true
@@ -263,6 +269,11 @@ class MainActivity : AppCompatActivity() {
         } else {
             rbRdCenter.isChecked = true
             btnLogout.visibility = View.GONE
+        }
+
+        // --- ДОБАВЛЕНО: Слушатель нажатия на карандаш ---
+        btnEditUrl.setOnClickListener {
+            showUrlEditDialog()
         }
 
         rgSource.setOnCheckedChangeListener { _, checkedId ->
@@ -423,5 +434,63 @@ class MainActivity : AppCompatActivity() {
                 viewPager.setCurrentItem(pos, false)
             }
         }
+    }
+    private fun showUrlEditDialog() {
+        val context = this
+
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            val padding = (24 * resources.displayMetrics.density).toInt()
+            setPadding(padding, padding, padding, 0)
+        }
+
+        val labelBase = TextView(context).apply { text = "Base URL (Сервер):" }
+        val inputBase = EditText(context).apply {
+            setText(ApiSettings.getRdBaseUrl(context))
+            hint = "https://schedule.rdcenter.ru/"
+        }
+
+        val labelEndpoint = TextView(context).apply {
+            text = "Endpoint (Путь):"
+            setPadding(0, (16 * resources.displayMetrics.density).toInt(), 0, 0)
+        }
+        val inputEndpoint = EditText(context).apply {
+            setText(ApiSettings.getRdEndpoint(context))
+            hint = "api/Schedule"
+        }
+
+        container.addView(labelBase)
+        container.addView(inputBase)
+        container.addView(labelEndpoint)
+        container.addView(inputEndpoint)
+
+        AlertDialog.Builder(context)
+            .setTitle("Настройка API RDCenter")
+            .setView(container)
+            // ИСПРАВЛЕНО: Явно указаны типы переменных
+            .setPositiveButton("Сохранить") { dialog: DialogInterface, which: Int ->
+                val newBase = inputBase.text.toString().trim()
+                val newEndpoint = inputEndpoint.text.toString().trim()
+
+                if (newBase.isNotEmpty() && newEndpoint.isNotEmpty()) {
+                    ApiSettings.setRdSettings(context, newBase, newEndpoint)
+                    if (ApiSettings.getApiSource(context) == ApiSource.RDCENTER) {
+                        viewModel.refreshSchedule()
+                    }
+                    Toast.makeText(context, "Настройки сохранены", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "Поля не могут быть пустыми", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Отмена", null)
+            // ИСПРАВЛЕНО: Явно указаны типы переменных
+            .setNeutralButton("Сброс") { dialog: DialogInterface, which: Int ->
+                ApiSettings.resetRdSettings(context)
+                if (ApiSettings.getApiSource(context) == ApiSource.RDCENTER) {
+                    viewModel.refreshSchedule()
+                }
+                Toast.makeText(context, "Настройки сброшены", Toast.LENGTH_SHORT).show()
+            }
+            .show()
     }
 }

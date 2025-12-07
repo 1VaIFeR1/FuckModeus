@@ -259,7 +259,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val responseBody = if (apiSource == ApiSource.SFEDU) {
                     api.getScheduleSfedu(requestBody)
                 } else {
-                    api.getScheduleRdCenter(requestBody)
+                    // Берем Endpoint из настроек
+                    val endpoint = ApiSettings.getRdEndpoint(getApplication())
+                    api.getScheduleRdCenter(endpoint, requestBody)
                 }
                 val responseString = responseBody.string()
 

@@ -12,27 +12,26 @@ import java.util.concurrent.TimeUnit
 
 object RetrofitInstance {
 
-    // URL-адреса
     private const val SFEDU_URL = "https://sfedu.modeus.org/"
-    private const val RDCENTER_URL = "https://schedule.rdcenter.ru/"
 
     private var retrofitSfedu: Retrofit? = null
+
+    // Для RDCenter храним текущий базовый URL, чтобы знать, когда пересоздавать
     private var retrofitRdCenter: Retrofit? = null
+    private var currentRdBaseUrl: String = ""
 
     fun getApi(context: Context): ApiService {
         val source = ApiSettings.getApiSource(context)
 
         return when (source) {
             ApiSource.SFEDU -> getSfeduRetrofit(context).create(ApiService::class.java)
-            ApiSource.RDCENTER -> getRdCenterRetrofit().create(ApiService::class.java)
+            ApiSource.RDCENTER -> getRdCenterRetrofit(context).create(ApiService::class.java)
         }
     }
 
-    // Клиент для SFEDU (С ТОКЕНОМ)
     private fun getSfeduRetrofit(context: Context): Retrofit {
         if (retrofitSfedu == null) {
             val logging = HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BODY }
-
             val authInterceptor = okhttp3.Interceptor { chain ->
                 val original = chain.request()
                 val token = TokenManager.getToken(context)
@@ -42,10 +41,9 @@ object RetrofitInstance {
                 }
                 chain.proceed(requestBuilder.build())
             }
-
             val client = OkHttpClient.Builder()
                 .addInterceptor(logging)
-                .addInterceptor(authInterceptor) // <-- Тут есть токен
+                .addInterceptor(authInterceptor)
                 .connectTimeout(30, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
                 .build()
@@ -59,20 +57,23 @@ object RetrofitInstance {
         return retrofitSfedu!!
     }
 
-    // Клиент для RDCenter (БЕЗ ТОКЕНА)
-    private fun getRdCenterRetrofit(): Retrofit {
-        if (retrofitRdCenter == null) {
-            val logging = HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BODY }
+    private fun getRdCenterRetrofit(context: Context): Retrofit {
+        // Читаем ТОЛЬКО Base URL из настроек
+        val savedBaseUrl = ApiSettings.getRdBaseUrl(context)
 
+        // Если инстанса нет ИЛИ Base URL изменился — пересоздаем клиент
+        if (retrofitRdCenter == null || currentRdBaseUrl != savedBaseUrl) {
+            currentRdBaseUrl = savedBaseUrl
+
+            val logging = HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BODY }
             val client = OkHttpClient.Builder()
                 .addInterceptor(logging)
-                // НЕТ authInterceptor
                 .connectTimeout(30, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
                 .build()
 
             retrofitRdCenter = Retrofit.Builder()
-                .baseUrl(RDCENTER_URL)
+                .baseUrl(savedBaseUrl)
                 .client(client)
                 .addConverterFactory(GsonConverterFactory.create())
                 .build()
