@@ -23,4 +23,4 @@ FuckModeus
 
 Требования
 
-Android 7.0 (Nougat) и выше.
+Android 7.0 и выше.
