@@ -14,6 +14,8 @@ import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.ImageView
@@ -88,8 +90,13 @@ class MainActivity : AppCompatActivity() {
 
         initGestureDetector()
 
+        // Сначала настраиваем UI, потом бар
         setupMainContent()
         setupDrawer()
+
+        // Бар профилей инициализируем после drawer, чтобы настройки успели подгрузиться
+        setupProfileBar()
+
         observeViewModel()
 
         val restartId = intent.getStringExtra("RESTART_WITH_ID")
@@ -249,38 +256,156 @@ class MainActivity : AppCompatActivity() {
 
         drawerLayout.addDrawerListener(object : DrawerLayout.SimpleDrawerListener() {
             override fun onDrawerClosed(drawerView: View) {
-                // --- СКРЫВАЕМ КЛАВИАТУРУ ПРИ ЗАКРЫТИИ МЕНЮ ---
                 hideKeyboard()
-
                 if (layoutSettings.visibility == View.VISIBLE) {
                     layoutSettings.visibility = View.GONE
                     layoutMain.visibility = View.VISIBLE
                 }
             }
             override fun onDrawerStateChanged(newState: Int) {
-                if (newState == DrawerLayout.STATE_DRAGGING) {
-                    hideKeyboard()
-                }
+                if (newState == DrawerLayout.STATE_DRAGGING) hideKeyboard()
             }
         })
 
-        // Элементы
         val rbSfedu = navigationView.findViewById<RadioButton>(R.id.rbSfedu)
         val rbRdCenter = navigationView.findViewById<RadioButton>(R.id.rbRdCenter)
-        val switchEmpty = navigationView.findViewById<SwitchMaterial>(R.id.switchShowEmpty)
-        val btnLogout = navigationView.findViewById<View>(R.id.btnLogoutInternal)
         val btnEditUrl = navigationView.findViewById<ImageView>(R.id.btnEditUrl)
 
-        // Кнопки для БД
+        val switchEmpty = navigationView.findViewById<SwitchMaterial>(R.id.switchShowEmpty)
+        val spinnerNav = navigationView.findViewById<android.widget.Spinner>(R.id.spinnerNavMode)
+
+        val switchParallel = navigationView.findViewById<SwitchMaterial>(R.id.switchParallel)
+        val containerParallel = navigationView.findViewById<LinearLayout>(R.id.containerParallelSettings)
+        val etCount = navigationView.findViewById<EditText>(R.id.etParallelCount)
+        val btnSaveCount = navigationView.findViewById<View>(R.id.btnSaveParallel)
+
         val btnUpdateDb = navigationView.findViewById<View>(R.id.btnUpdateDb)
         val btnExportDb = navigationView.findViewById<View>(R.id.btnExportDb)
+        val btnLogout = navigationView.findViewById<View>(R.id.btnLogoutInternal)
 
-        // --- НОВЫЕ ЭЛЕМЕНТЫ UI ---
-        val spinnerNav = navigationView.findViewById<android.widget.Spinner>(R.id.spinnerNavMode)
         val btnToggleAdv = navigationView.findViewById<TextView>(R.id.btnToggleAdvanced)
         val containerAdv = navigationView.findViewById<LinearLayout>(R.id.containerAdvanced)
+        val rgProfileMode = navigationView.findViewById<RadioGroup>(R.id.rgProfileMode)
+        val rbBar = navigationView.findViewById<RadioButton>(R.id.rbModeBar)
+        val rbDropdown = navigationView.findViewById<RadioButton>(R.id.rbModeDropdown)
 
-        // --- ЛОГИКА "ДОПОЛНИТЕЛЬНО" ---
+        if (ApiSettings.getProfileDisplayMode(this) == com.fuck.modeus.data.ProfileDisplayMode.BAR) {
+            rbBar.isChecked = true
+        } else {
+            rbDropdown.isChecked = true
+        }
+
+        // Слушатели
+        rbBar.setOnClickListener {
+            ApiSettings.setProfileDisplayMode(this, com.fuck.modeus.data.ProfileDisplayMode.BAR)
+            setupProfileBar() // Перерисовываем на главном экране
+        }
+        rbDropdown.setOnClickListener {
+            ApiSettings.setProfileDisplayMode(this, com.fuck.modeus.data.ProfileDisplayMode.DROPDOWN)
+            setupProfileBar()
+        }
+        // API Source
+        val currentSource = ApiSettings.getApiSource(this)
+        if (currentSource == ApiSource.SFEDU) {
+            rbSfedu.isChecked = true
+            btnLogout.visibility = View.VISIBLE
+        } else {
+            rbRdCenter.isChecked = true
+            btnLogout.visibility = View.GONE
+        }
+
+        rbSfedu.setOnClickListener {
+            ApiSettings.setApiSource(this, ApiSource.SFEDU)
+            rbSfedu.isChecked = true; rbRdCenter.isChecked = false
+            btnLogout.visibility = View.VISIBLE
+            Toast.makeText(this, "Источник: SFEDU Modeus", Toast.LENGTH_SHORT).show()
+        }
+        rbRdCenter.setOnClickListener {
+            ApiSettings.setApiSource(this, ApiSource.RDCENTER)
+            rbSfedu.isChecked = false; rbRdCenter.isChecked = true
+            btnLogout.visibility = View.GONE
+            Toast.makeText(this, "Источник: ИКТИБ (RDCenter)", Toast.LENGTH_SHORT).show()
+        }
+        btnEditUrl.setOnClickListener { showUrlEditDialog() }
+
+        // --- ИСПРАВЛЕННЫЙ СПИННЕР ---
+        val modes = arrayOf("Только свайпы", "Только касания", "Свайпы и касания (Both)")
+        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, modes)
+        spinnerNav.adapter = adapter
+
+        // Важно: Сначала вешаем слушатель, потом в Observer будем обновлять
+        spinnerNav.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                (view as? TextView)?.setTextColor(Color.WHITE)
+
+                val newMode = when(position) {
+                    0 -> NavigationMode.SWIPE
+                    1 -> NavigationMode.TOUCH
+                    else -> NavigationMode.BOTH
+                }
+
+                // Сохраняем ТОЛЬКО если отличается от текущего в VM (чтобы избежать цикла при старте)
+                if (newMode != viewModel.navigationMode.value) {
+                    viewModel.setNavigationMode(newMode)
+                }
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        // Наблюдаем за VM, чтобы выставить правильное начальное значение
+        viewModel.navigationMode.observe(this) { mode ->
+            val selectionIndex = when(mode) {
+                NavigationMode.SWIPE -> 0
+                NavigationMode.TOUCH -> 1
+                else -> 2 // BOTH
+            }
+            if (spinnerNav.selectedItemPosition != selectionIndex) {
+                spinnerNav.setSelection(selectionIndex, false)
+            }
+
+            // Обновляем ViewPager
+            val swipeEnabled = (mode == NavigationMode.SWIPE || mode == NavigationMode.BOTH)
+            viewPager.isUserInputEnabled = swipeEnabled
+        }
+
+        // --- ОСТАЛЬНЫЕ НАСТРОЙКИ ---
+        viewModel.showEmptyLessons.observe(this) {
+            if (switchEmpty.isChecked != it) switchEmpty.isChecked = it
+        }
+        switchEmpty.setOnCheckedChangeListener { _, isChecked -> viewModel.setShowEmptyLessons(isChecked) }
+
+        // Мультипрофиль
+        val isParallel = ApiSettings.isParallelEnabled(this)
+        switchParallel.isChecked = isParallel
+        containerParallel.visibility = if (isParallel) View.VISIBLE else View.GONE
+        etCount.setText(ApiSettings.getParallelCount(this).toString())
+
+        switchParallel.setOnCheckedChangeListener { _, isChecked ->
+            ApiSettings.setParallelEnabled(this, isChecked)
+            containerParallel.visibility = if (isChecked) View.VISIBLE else View.GONE
+            if (!isChecked) {
+                ApiSettings.setCurrentProfile(this, 0)
+                setupProfileBar()
+                // При выключении возвращаемся к дефолтному
+                viewModel.loadInitialSchedule(keepCurrentPosition = true)
+            } else {
+                setupProfileBar()
+                // При включении остаемся на текущем или грузим 0-й
+                viewModel.loadInitialSchedule(keepCurrentPosition = true)
+            }
+        }
+
+        btnSaveCount.setOnClickListener {
+            val countStr = etCount.text.toString()
+            val count = countStr.toIntOrNull()?.coerceIn(2, 10) ?: 2
+            ApiSettings.setParallelCount(this, count)
+            etCount.setText(count.toString())
+            hideKeyboard()
+            setupProfileBar()
+            Toast.makeText(this, "Профилей: $count", Toast.LENGTH_SHORT).show()
+        }
+
+        // Advanced Options
         btnToggleAdv.setOnClickListener {
             if (containerAdv.visibility == View.VISIBLE) {
                 containerAdv.visibility = View.GONE
@@ -291,71 +416,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // --- ЛОГИКА СПИННЕРА НАВИГАЦИИ ---
-        // Создаем адаптер для спиннера
-        val modes = arrayOf("Только свайпы", "Только касания", "Свайпы и касания (Both)")
-        // Используем simple_spinner_dropdown_item для темной темы (текст белый)
-        val adapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, modes)
-        spinnerNav.adapter = adapter
-
-        // Устанавливаем текущее значение
-        val currentMode = viewModel.navigationMode.value ?: NavigationMode.BOTH
-        val selectionIndex = when(currentMode) {
-            NavigationMode.SWIPE -> 0
-            NavigationMode.TOUCH -> 1
-            NavigationMode.BOTH -> 2
-        }
-        spinnerNav.setSelection(selectionIndex)
-
-        // Слушатель выбора
-        spinnerNav.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
-                // Изменяем цвет текста выбранного элемента на белый (фикс для темной темы)
-                (view as? TextView)?.setTextColor(Color.WHITE)
-
-                val newMode = when(position) {
-                    0 -> NavigationMode.SWIPE
-                    1 -> NavigationMode.TOUCH
-                    else -> NavigationMode.BOTH
-                }
-                viewModel.setNavigationMode(newMode)
-            }
-            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
-        }
-
-        // Инициализация источника API
-        val currentSource = ApiSettings.getApiSource(this)
-        if (currentSource == ApiSource.SFEDU) {
-            rbSfedu.isChecked = true
-            btnLogout.visibility = View.VISIBLE
-        } else {
-            rbRdCenter.isChecked = true
-            btnLogout.visibility = View.GONE
-        }
-
-        btnEditUrl.setOnClickListener { showUrlEditDialog() }
-
-        rbSfedu.setOnClickListener {
-            ApiSettings.setApiSource(this, ApiSource.SFEDU)
-            rbSfedu.isChecked = true
-            rbRdCenter.isChecked = false
-            btnLogout.visibility = View.VISIBLE
-            Toast.makeText(this, "Источник: SFEDU Modeus", Toast.LENGTH_SHORT).show()
-        }
-        rbRdCenter.setOnClickListener {
-            ApiSettings.setApiSource(this, ApiSource.RDCENTER)
-            rbSfedu.isChecked = false
-            rbRdCenter.isChecked = true
-            btnLogout.visibility = View.GONE
-            Toast.makeText(this, "Источник: ИКТИБ (RDCenter)", Toast.LENGTH_SHORT).show()
-        }
-
-        viewModel.showEmptyLessons.observe(this) {
-            if (switchEmpty.isChecked != it) switchEmpty.isChecked = it
-        }
-        switchEmpty.setOnCheckedChangeListener { _, isChecked -> viewModel.setShowEmptyLessons(isChecked) }
-
-        // Логика кнопок БД
         btnUpdateDb.setOnClickListener {
             AlertDialog.Builder(this)
                 .setTitle("Обновление базы")
@@ -368,13 +428,149 @@ class MainActivity : AppCompatActivity() {
                 .show()
         }
 
-        btnExportDb.setOnClickListener {
-            exportDatabaseFile()
-        }
-
+        btnExportDb.setOnClickListener { exportDatabaseFile() }
         btnLogout.setOnClickListener { performLogout() }
 
         setupSearchLogic(navigationView)
+    }
+    private var profileDropdownTrigger: TextView? = null
+    private fun setupProfileBar() {
+        val containerProfiles = findViewById<LinearLayout>(R.id.containerProfiles)
+        containerProfiles.removeAllViews()
+
+        if (!ApiSettings.isParallelEnabled(this)) {
+            containerProfiles.visibility = View.GONE
+            return
+        }
+        containerProfiles.visibility = View.VISIBLE
+
+        val count = ApiSettings.getParallelCount(this)
+        val current = ApiSettings.getCurrentProfile(this)
+        val mode = ApiSettings.getProfileDisplayMode(this)
+
+        if (mode == com.fuck.modeus.data.ProfileDisplayMode.BAR) {
+            // --- СТАРЫЙ РЕЖИМ (КНОПКИ) ---
+            val useFullText = count <= 3
+            for (i in 0 until count) {
+                val btn = TextView(this)
+                btn.text = if (useFullText) "Профиль ${i + 1}" else "${i + 1}"
+                btn.textSize = 14f
+                btn.gravity = android.view.Gravity.CENTER
+                btn.maxLines = 1
+
+                val params = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                if (i < count - 1) params.marginEnd = (4 * resources.displayMetrics.density).toInt()
+                btn.layoutParams = params
+                val padding = (8 * resources.displayMetrics.density).toInt()
+                btn.setPadding(0, padding, 0, padding)
+
+                val drawable = android.graphics.drawable.GradientDrawable()
+                drawable.cornerRadius = (8 * resources.displayMetrics.density)
+
+                if (i == current) {
+                    btn.setTextColor(Color.BLACK)
+                    drawable.setColor(Color.parseColor("#FFC107"))
+                    btn.setTypeface(null, android.graphics.Typeface.BOLD)
+                } else {
+                    btn.setTextColor(Color.WHITE)
+                    drawable.setColor(Color.parseColor("#444444"))
+                    drawable.setStroke(2, Color.parseColor("#666666"))
+                    btn.setTypeface(null, android.graphics.Typeface.NORMAL)
+                }
+                btn.background = drawable
+
+                btn.setOnClickListener {
+                    if (ApiSettings.getCurrentProfile(this) != i) {
+                        ApiSettings.setCurrentProfile(this, i)
+                        setupProfileBar()
+
+                        // ИЗМЕНЕНИЕ: Передаем true, чтобы сохранить день
+                        viewModel.loadInitialSchedule(keepCurrentPosition = true)
+                    }
+                }
+                containerProfiles.addView(btn)
+            }
+        } else {
+            // --- НОВЫЙ РЕЖИМ (СПИСОК) ---
+            val trigger = TextView(this)
+
+            // ИСПРАВЛЕНИЕ: Пишем просто "Профиль X", без имени объекта
+            val profileTitle = "Профиль ${current + 1}"
+            trigger.text = profileTitle
+
+            trigger.textSize = 16f
+            trigger.setTextColor(Color.BLACK)
+            trigger.gravity = android.view.Gravity.CENTER
+            trigger.setTypeface(null, android.graphics.Typeface.BOLD)
+
+            val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            trigger.layoutParams = params
+
+            val padding = (10 * resources.displayMetrics.density).toInt()
+            trigger.setPadding(padding, padding, padding, padding)
+
+            val drawable = android.graphics.drawable.GradientDrawable()
+            drawable.cornerRadius = (8 * resources.displayMetrics.density)
+            drawable.setColor(Color.parseColor("#FFC107"))
+            trigger.background = drawable
+
+            val arrow = resources.getDrawable(android.R.drawable.arrow_down_float, null)
+            arrow.setTint(Color.BLACK)
+            trigger.setCompoundDrawablesWithIntrinsicBounds(null, null, arrow, null)
+            trigger.compoundDrawablePadding = padding
+
+            trigger.setOnClickListener { showProfilePopup(trigger, count) }
+
+            containerProfiles.addView(trigger)
+        }
+    }
+
+    // Метод показа Popup
+    private fun showProfilePopup(anchor: View, count: Int) {
+        val listPopupWindow = android.widget.ListPopupWindow(this)
+        listPopupWindow.anchorView = anchor
+
+        val profiles = mutableListOf<Pair<String, String>>()
+        for (i in 0 until count) {
+            // Имя достаем здесь, чтобы показать ТОЛЬКО в списке
+            val name = ApiSettings.getProfileTargetName(this, i) ?: "(Пусто)"
+            profiles.add("Профиль ${i + 1}" to name)
+        }
+
+        val adapter = object : android.widget.ArrayAdapter<Pair<String, String>>(this, R.layout.item_profile_dropdown, profiles) {
+            override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
+                val view = convertView ?: LayoutInflater.from(context).inflate(R.layout.item_profile_dropdown, parent, false)
+                val title = view.findViewById<TextView>(R.id.tvProfileTitle)
+                val subtitle = view.findViewById<TextView>(R.id.tvProfileSubtitle)
+
+                val item = getItem(position)
+                title.text = item?.first
+                subtitle.text = item?.second
+
+                if (position == ApiSettings.getCurrentProfile(context)) {
+                    title.setTextColor(Color.parseColor("#FFC107"))
+                } else {
+                    title.setTextColor(Color.WHITE)
+                }
+
+                return view
+            }
+        }
+
+        listPopupWindow.setAdapter(adapter)
+
+        listPopupWindow.setOnItemClickListener { _, _, position, _ ->
+            if (ApiSettings.getCurrentProfile(this) != position) {
+                ApiSettings.setCurrentProfile(this, position)
+                setupProfileBar()
+
+                // ИСПРАВЛЕНИЕ: Грузим из КЕША (памяти), а не из интернета!
+                viewModel.loadInitialSchedule(keepCurrentPosition = true)
+            }
+            listPopupWindow.dismiss()
+        }
+
+        listPopupWindow.show()
     }
 
     private fun setupSearchLogic(navView: NavigationView) {
@@ -428,7 +624,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun selectTargetAndFind(target: ScheduleTarget) {
-        // FIX: person_id -> id
         viewModel.loadSchedule(target.id)
         drawerLayout.closeDrawer(GravityCompat.END)
     }
@@ -471,11 +666,12 @@ class MainActivity : AppCompatActivity() {
 
         tvGroup.text = "👥 Группа: ${item.groupCode ?: "не указана"} (участников: ${item.teamSize ?: "?"})"
         dialog.show()
+
         val btnAttendees = dialogView.findViewById<View>(R.id.btnShowAttendees)
         if (ApiSettings.getApiSource(this) == ApiSource.SFEDU) {
             btnAttendees.visibility = View.VISIBLE
             btnAttendees.setOnClickListener {
-                showAttendeesDialog(item.id) // Передаем ID события
+                showAttendeesDialog(item.id)
             }
         } else {
             btnAttendees.visibility = View.GONE
@@ -485,16 +681,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun searchFor(name: String) {
-        // 1. Пытаемся найти ID по имени в нашей базе
+        // 1. Сначала ищем ID по имени
         val targetId = viewModel.findTargetIdByName(name)
 
         if (targetId != null) {
-            // 2. Если нашли — сразу грузим!
+            // Если нашли - грузим
             viewModel.loadSchedule(targetId)
             Toast.makeText(this, "Загрузка: $name", Toast.LENGTH_SHORT).show()
-            // Drawer не открываем, клавиатуру не показываем
         } else {
-            // 3. Если не нашли (например, имя неполное) — открываем поиск как раньше
+            // Если нет - открываем меню и поиск
             drawerLayout.openDrawer(GravityCompat.END)
             val etSearch = findViewById<NavigationView>(R.id.navigationView).findViewById<EditText>(R.id.etSearch)
             etSearch.setText(name)
@@ -540,6 +735,13 @@ class MainActivity : AppCompatActivity() {
             if (viewPager.currentItem != pos) {
                 viewPager.setCurrentItem(pos, false)
             }
+        }
+
+        viewModel.navigationMode.observe(this) { mode ->
+            val swipeEnabled = (mode == NavigationMode.SWIPE || mode == NavigationMode.BOTH)
+            viewPager.isUserInputEnabled = swipeEnabled
+
+            if (!::gestureDetector.isInitialized) initGestureDetector()
         }
     }
 
@@ -600,38 +802,6 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
-        if (ev != null) {
-            // Если меню открыто — не перехватываем жесты, но проверяем клик мимо клавиатуры
-            if (drawerLayout.isDrawerOpen(GravityCompat.END)) {
-                // Если тапнули (ACTION_DOWN)
-                if (ev.action == MotionEvent.ACTION_DOWN) {
-                    val v = currentFocus
-                    if (v is EditText) {
-                        val outRect = android.graphics.Rect()
-                        v.getGlobalVisibleRect(outRect)
-                        // Если тапнули НЕ по полю ввода — скрываем клаву
-                        if (!outRect.contains(ev.rawX.toInt(), ev.rawY.toInt())) {
-                            hideKeyboard()
-                        }
-                    }
-                }
-                return super.dispatchTouchEvent(ev)
-            }
-
-            // Логика жестов по краям (только если меню закрыто)
-            val isContentArea = ev.y > headerHeightPx
-            val mode = viewModel.navigationMode.value ?: NavigationMode.BOTH
-            val isTouchAllowed = (mode == NavigationMode.TOUCH || mode == NavigationMode.BOTH)
-
-            if (isTouchAllowed && isContentArea && ::gestureDetector.isInitialized) {
-                if (gestureDetector.onTouchEvent(ev)) {
-                    return true
-                }
-            }
-        }
-        return super.dispatchTouchEvent(ev)
-    }
     private fun exportDatabaseFile() {
         try {
             val dbFile = java.io.File(filesDir, "allid_v2.json")
@@ -639,41 +809,17 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "База данных еще не создана", Toast.LENGTH_SHORT).show()
                 return
             }
-
-            // Создаем временный файл в кеше, чтобы к нему был доступ у других приложений через FileProvider
-            // НО! Чтобы не мучаться с FileProvider (настройка XML), сделаем проще:
-            // Просто прочитаем контент и отправим как Текст (если файл не гигантский)
-            // ИЛИ используем простой Uri.fromFile (может не сработать на Android 7+ без провайдера).
-
-            // Самый надежный "ленивый" способ без настройки Provider'а в манифесте:
-            // Копируем файл в публичную директорию (Download)
-
-            /* НО, ЧТОБЫ ТЫ МОГ ЕГО ГЛЯНУТЬ ПРЯМО СЕЙЧАС: */
             val content = dbFile.readText()
-
-            // Если файл слишком большой, Intent может упасть.
-            // Давай лучше сохраним копию в папку Download.
-
             val downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
             val destFile = java.io.File(downloadDir, "modeus_db_dump.json")
-
             dbFile.copyTo(destFile, overwrite = true)
-
             Toast.makeText(this, "Сохранено в Загрузки: modeus_db_dump.json", Toast.LENGTH_LONG).show()
-
-            // Попробуем открыть
-            /*
-            val intent = Intent(Intent.ACTION_VIEW)
-            intent.setDataAndType(Uri.fromFile(destFile), "text/json")
-            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            startActivity(Intent.createChooser(intent, "Открыть базу"))
-            */
-
         } catch (e: Exception) {
             Toast.makeText(this, "Ошибка экспорта: ${e.message}", Toast.LENGTH_LONG).show()
             e.printStackTrace()
         }
     }
+
     private fun hideKeyboard() {
         val view = this.currentFocus
         if (view != null) {
@@ -682,6 +828,7 @@ class MainActivity : AppCompatActivity() {
             view.clearFocus()
         }
     }
+
     private fun showAttendeesDialog(eventId: String) {
         val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_attendees, null)
         val dialog = AlertDialog.Builder(this)
@@ -694,9 +841,8 @@ class MainActivity : AppCompatActivity() {
         val btnClose = dialogView.findViewById<View>(R.id.btnCloseAttendees)
 
         val adapter = AttendeesAdapter { attendee ->
-            // При клике на участника
-            dialog.dismiss() // Закрываем список
-            viewModel.loadSchedule(attendee.personId) // Грузим расписание этого человека
+            dialog.dismiss()
+            viewModel.loadSchedule(attendee.personId)
             Toast.makeText(this, "Загрузка: ${attendee.fullName}", Toast.LENGTH_SHORT).show()
         }
         rv.layoutManager = LinearLayoutManager(this)
@@ -704,14 +850,7 @@ class MainActivity : AppCompatActivity() {
 
         btnClose.setOnClickListener { dialog.dismiss() }
 
-        // Запускаем загрузку
         viewModel.loadEventAttendees(eventId)
-
-        // Наблюдаем за состоянием (нужно удалить наблюдателей при закрытии, но AlertDialog сам это не делает.
-        // Поэтому используем viewLifecycleOwner от Activity, но аккуратно)
-
-        // Лучше использовать отдельные обсерверы внутри диалога, но здесь мы в Activity.
-        // Просто подписываемся. LiveData пришлет обновление.
 
         viewModel.attendeesLoading.observe(this) { isLoading ->
             pb.visibility = if (isLoading) View.VISIBLE else View.GONE
@@ -725,7 +864,6 @@ class MainActivity : AppCompatActivity() {
                 rv.visibility = View.VISIBLE
                 tvError.visibility = View.GONE
             } else {
-                // Если загрузка кончилась, а список пуст - значит ошибка или никого нет
                 if (viewModel.attendeesLoading.value == false) {
                     rv.visibility = View.GONE
                     tvError.visibility = View.VISIBLE
@@ -733,12 +871,36 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-
-        dialog.setOnDismissListener {
-            // Очищаем список при закрытии, чтобы следующий диалог не показал старых данных на долю секунды
-            // Можно добавить метод clearAttendees в ViewModel
-        }
-
         dialog.show()
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
+        if (ev != null) {
+            if (drawerLayout.isDrawerOpen(GravityCompat.END)) {
+                // Если тап мимо клавиатуры - скрыть её
+                if (ev.action == MotionEvent.ACTION_DOWN) {
+                    val v = currentFocus
+                    if (v is EditText) {
+                        val outRect = android.graphics.Rect()
+                        v.getGlobalVisibleRect(outRect)
+                        if (!outRect.contains(ev.rawX.toInt(), ev.rawY.toInt())) {
+                            hideKeyboard()
+                        }
+                    }
+                }
+                return super.dispatchTouchEvent(ev)
+            }
+
+            val isContentArea = ev.y > headerHeightPx
+            val mode = viewModel.navigationMode.value ?: NavigationMode.BOTH
+            val isTouchAllowed = (mode == NavigationMode.TOUCH || mode == NavigationMode.BOTH)
+
+            if (isTouchAllowed && isContentArea && ::gestureDetector.isInitialized) {
+                if (gestureDetector.onTouchEvent(ev)) {
+                    return true
+                }
+            }
+        }
+        return super.dispatchTouchEvent(ev)
     }
 }

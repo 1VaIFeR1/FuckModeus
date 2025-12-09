@@ -117,7 +117,7 @@
         </ScrollView>
     </RelativeLayout>
 
-    <!-- МЕНЮ НАСТРОЕК (ИЗМЕНЕНО) -->
+    <!-- МЕНЮ НАСТРОЕК (КАСТОМИЗАЦИЯ) -->
     <LinearLayout
         android:id="@+id/layout_settings_menu"
         android:layout_width="match_parent"
@@ -125,15 +125,16 @@
         android:orientation="vertical"
         android:padding="16dp"
         android:visibility="gone"
-        android:background="#2F2F2F">
+        android:background="#2F2F2F"> <!-- Твой цвет фона -->
 
+        <!-- ЗАГОЛОВОК И НАЗАД -->
         <LinearLayout
             android:id="@+id/btnBackToMenu"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:paddingVertical="8dp"
+            android:paddingVertical="12dp"
             android:background="?attr/selectableItemBackground"
             android:clickable="true">
 
@@ -146,42 +147,40 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Назад"
-                android:textSize="18sp"
+                android:text="Настройки"
+                android:textSize="20sp"
                 android:textStyle="bold"
                 android:textColor="#FFFFFF"
                 android:layout_marginStart="16dp"/>
         </LinearLayout>
 
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="#555555"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="16dp"/>
+        <Space android:layout_width="match_parent" android:layout_height="16dp"/>
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Источник данных:"
-            android:textColor="#AAAAAA"
-            android:layout_marginBottom="8dp"/>
-
+        <!-- БЛОК 1: ИСТОЧНИК -->
         <LinearLayout
-            android:id="@+id/containerSourceSelection"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:layout_marginBottom="24dp">
+            android:padding="12dp"
+            android:background="@drawable/bg_settings_block"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Источник данных"
+                android:textColor="#AAAAAA"
+                android:textSize="12sp"
+                android:layout_marginBottom="4dp"/>
 
             <RadioButton
                 android:id="@+id/rbSfedu"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="SFEDU Modeus (Требуется вход)"
+                android:text="SFEDU Modeus (Авторизация)"
                 android:textColor="#FFFFFF"
                 android:buttonTint="#FFFFFF"
-                android:paddingVertical="8dp"/>
+                android:textSize="14sp"/>
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -194,16 +193,16 @@
                     android:layout_width="0dp"
                     android:layout_weight="1"
                     android:layout_height="wrap_content"
-                    android:text="ИКТИБ Расписание (Без входа)"
+                    android:text="ИКТИБ (Без входа)"
                     android:textColor="#FFFFFF"
                     android:buttonTint="#FFFFFF"
-                    android:paddingVertical="8dp"/>
+                    android:textSize="14sp"/>
 
                 <ImageView
                     android:id="@+id/btnEditUrl"
                     android:layout_width="40dp"
                     android:layout_height="40dp"
-                    android:padding="8dp"
+                    android:padding="10dp"
                     android:src="@android:drawable/ic_menu_edit"
                     app:tint="#AAAAAA"
                     android:background="?attr/selectableItemBackgroundBorderless"
@@ -212,38 +211,151 @@
             </LinearLayout>
         </LinearLayout>
 
-        <com.google.android.material.switchmaterial.SwitchMaterial
-            android:id="@+id/switchShowEmpty"
+        <!-- БЛОК 2: ПАРАМЕТРЫ -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Отображать 'Нет пары'"
-            android:textColor="#FFFFFF"
-            android:paddingVertical="8dp"
-            android:layout_marginBottom="8dp"/>
+            android:orientation="vertical"
+            android:padding="12dp"
+            android:background="@drawable/bg_settings_block"
+            android:layout_marginBottom="16dp">
 
-        <!-- НОВОЕ: ВЫПАДАЮЩИЙ СПИСОК ВМЕСТО КУЧИ КНОПОК -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Режим навигации:"
-            android:textColor="#AAAAAA"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="4dp"/>
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switchShowEmpty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Отображать 'Нет пары'"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"/>
 
-        <Spinner
-            android:id="@+id/spinnerNavMode"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:minHeight="48dp"
-            android:layout_marginBottom="16dp"
-            android:backgroundTint="#FFFFFF" />
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="#555555"
+                android:layout_marginVertical="8dp"/>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Режим навигации:"
+                android:textColor="#AAAAAA"
+                android:textSize="12sp"
+                android:layout_marginBottom="4dp"/>
+
+            <Spinner
+                android:id="@+id/spinnerNavMode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:backgroundTint="#FFFFFF" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="#555555"
+                android:layout_marginVertical="8dp"/>
+
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switchParallel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Параллельные расписания"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"/>
+
+            <LinearLayout
+                android:id="@+id/containerParallelSettings"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone"
+                android:paddingTop="8dp"
+                android:layout_marginBottom="16dp">
+
+                <!-- Текст сверху -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Количество профилей (макс 10):"
+                    android:textColor="#AAAAAA"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="8dp"/>
+
+                <!-- Строка: Поле ввода + Кнопка -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <!-- Поле ввода с фоном как у поиска -->
+                    <EditText
+                        android:id="@+id/etParallelCount"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:inputType="number"
+                        android:textColor="#FFFFFF"
+                        android:maxLength="2"
+                        android:background="@drawable/bg_search_field"
+                        android:paddingVertical="10dp"
+                        android:paddingHorizontal="16dp"
+                        android:gravity="center_vertical"
+                        android:hint="2"/>
+
+                    <Button
+                        android:id="@+id/btnSaveParallel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="ОК"
+                        android:minWidth="60dp"
+                        android:layout_marginStart="8dp"
+                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                        android:textColor="#FFFFFF"/>
+
+                </LinearLayout>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Вид переключения:"
+                    android:textColor="#AAAAAA"
+                    android:textSize="12sp"
+                    android:layout_marginTop="12dp"
+                    android:layout_marginBottom="8dp"/>
+
+                <RadioGroup
+                    android:id="@+id/rgProfileMode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <RadioButton
+                        android:id="@+id/rbModeBar"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
+                        android:text="Кнопки"
+                        android:textColor="#FFFFFF"
+                        android:buttonTint="#FFFFFF"/>
+
+                    <RadioButton
+                        android:id="@+id/rbModeDropdown"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
+                        android:text="Список"
+                        android:textColor="#FFFFFF"
+                        android:buttonTint="#FFFFFF"/>
+                </RadioGroup>
+            </LinearLayout>
+
+        </LinearLayout>
 
         <Space
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"/>
 
-        <!-- КНОПКА ПОКАЗАТЬ/СКРЫТЬ ДОПОЛНИТЕЛЬНО -->
         <TextView
             android:id="@+id/btnToggleAdvanced"
             android:layout_width="match_parent"
@@ -255,7 +367,6 @@
             android:background="?attr/selectableItemBackground"
             android:layout_marginBottom="8dp"/>
 
-        <!-- КОНТЕЙНЕР ДЛЯ РЕДКИХ КНОПОК (Скрыт по умолчанию) -->
         <LinearLayout
             android:id="@+id/containerAdvanced"
             android:layout_width="match_parent"
@@ -279,7 +390,7 @@
                 android:id="@+id/btnExportDb"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Экспорт базы (Поделиться)"
+                android:text="Экспорт базы (JSON)"
                 android:textColor="@android:color/white"
                 android:backgroundTint="#4CAF50"
                 app:icon="@android:drawable/ic_menu_share"

@@ -88,7 +88,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val attendeesLoading: LiveData<Boolean> = _attendeesLoading
 
     // --- Файлы ---
-    private val cacheFileName = "schedule_cache_v2.json"
     private val dbFileName = "allid_v2.json"
     private val sharedPreferences = application.getSharedPreferences("schedule_prefs", Application.MODE_PRIVATE)
 
@@ -360,8 +359,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val scheduleItems = parseResponseV2(scheduleResponse)
                     val sortedItems = scheduleItems.sortedBy { it.fullStartDate }
 
+                    // Определяем имя (ФИО препода или номер аудитории)
                     val targetName = target?.name ?: "Расписание"
                     val currentTime = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.getDefault()).format(Date())
+
+                    // --- НОВОЕ: Сохраняем имя для текущего профиля (для списка) ---
+                    if (ApiSettings.isParallelEnabled(getApplication())) {
+                        val currentProfile = ApiSettings.getCurrentProfile(getApplication())
+                        ApiSettings.saveProfileTargetName(getApplication(), currentProfile, targetName)
+                    }
+                    // -------------------------------------------------------------
 
                     val dataToCache = CachedData(targetId, targetName, currentTime, responseString)
                     saveDataToFile(dataToCache)
@@ -534,18 +541,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _isRefreshing.postValue(true)
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val fileInputStream = getApplication<Application>().openFileInput(cacheFileName)
+                // Используем getCacheFileName() вместо переменной
+                val fileName = getCacheFileName()
+                val fileInputStream = getApplication<Application>().openFileInput(fileName)
                 val jsonString = fileInputStream.reader().readText()
                 fileInputStream.close()
+
                 val cachedData = Gson().fromJson(jsonString, CachedData::class.java)
                 loadSchedule(cachedData.targetId)
             } catch (e: Exception) {
                 _isRefreshing.postValue(false)
-                _error.postValue("Сначала выберите расписание")
+                // Очищаем экран, если профиль пустой
+                _scheduleTitle.postValue("Расписание не выбрано")
+                _lastUpdateTime.postValue("")
+                processRawSchedule(emptyList()) // Очищаем список
+                _error.postValue("В этом профиле нет расписания. Найдите кого-нибудь.")
             }
         }
     }
-    fun loadInitialSchedule() { loadDataFromFile() }
+
+    fun loadInitialSchedule(keepCurrentPosition: Boolean = false) {
+        loadDataFromFile(keepCurrentPosition)
+    }
     private fun openLoginActivity(personId: String?) {
         val intent = Intent(getApplication(), LoginActivity::class.java)
         intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -555,27 +572,49 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun saveDataToFile(data: CachedData) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                val fileName = getCacheFileName() // Получаем динамическое имя
                 val jsonString = Gson().toJson(data)
-                val fileOutputStream = getApplication<Application>().openFileOutput(cacheFileName, Context.MODE_PRIVATE)
+                val fileOutputStream = getApplication<Application>().openFileOutput(fileName, Context.MODE_PRIVATE)
                 fileOutputStream.write(jsonString.toByteArray())
                 fileOutputStream.close()
+                Log.d(TAG, "Saved to $fileName")
             } catch (e: Exception) {}
         }
     }
-    private fun loadDataFromFile() {
+    private fun loadDataFromFile(keepCurrentPosition: Boolean = false) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val fileInputStream = getApplication<Application>().openFileInput(cacheFileName)
+                val fileName = getCacheFileName() // Получаем имя (например schedule_cache_v2_1.json)
+
+                // ИСПРАВЛЕНО: используем fileName, а не cacheFileName
+                val fileInputStream = getApplication<Application>().openFileInput(fileName)
                 val jsonString = fileInputStream.reader().readText()
                 fileInputStream.close()
+
                 val cachedData = Gson().fromJson(jsonString, CachedData::class.java)
                 val scheduleResponse = Gson().fromJson(cachedData.scheduleJsonResponse, ScheduleResponse::class.java)
                 val items = parseResponseV2(scheduleResponse).sortedBy { it.fullStartDate }
+
                 _scheduleTitle.postValue(cachedData.targetName)
                 _lastUpdateTime.postValue("Последнее обновление: ${cachedData.lastUpdateTime}")
+
                 processRawSchedule(items)
-                setInitialPage()
-            } catch (e: Exception) { _error.postValue("Кеш пуст") }
+
+                // ИСПРАВЛЕНО: Теперь переменная keepCurrentPosition доступна
+                if (!keepCurrentPosition) {
+                    setInitialPage()
+                }
+            } catch (e: Exception) {
+                // Если файла нет (пустой профиль) - чистим UI
+                _scheduleTitle.postValue("Расписание не выбрано")
+                _lastUpdateTime.postValue("")
+                processRawSchedule(emptyList())
+
+                if (!keepCurrentPosition) {
+                    setInitialPage()
+                }
+                // Не кидаем ошибку в тост, это нормальная ситуация
+            }
         }
     }
 
@@ -646,6 +685,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun togglePin(target: ScheduleTarget) {
         target.isPinned = !target.isPinned; savePinnedStatus(); updatePinnedList()
         _searchResults.value?.let { _searchResults.postValue(it.toList()) }
+    }
+    private fun getCacheFileName(): String {
+        val context = getApplication<Application>()
+        if (!ApiSettings.isParallelEnabled(context)) {
+            return "schedule_cache_v2.json"
+        }
+        val index = ApiSettings.getCurrentProfile(context)
+        return "schedule_cache_v2_$index.json"
     }
     private fun savePinnedStatus() {
         val pinnedIds = allTargets.filter { it.isPinned }.map { it.id }.toSet()
