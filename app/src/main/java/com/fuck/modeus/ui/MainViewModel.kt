@@ -22,11 +22,23 @@ import java.io.InputStreamReader
 import java.text.SimpleDateFormat
 import java.util.*
 
-enum class NavigationMode { TOUCH, SWIPE }
+// --- ОБНОВЛЕННЫЙ ENUM ---
+enum class NavigationMode { SWIPE, TOUCH, BOTH }
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val TAG = "FuckModeus_DEBUG"
+
+    // --- Константы семестров ---
+    private val AUTUMN_START_MONTH = Calendar.SEPTEMBER
+    private val AUTUMN_START_DAY = 1
+    private val AUTUMN_END_MONTH = Calendar.FEBRUARY
+    private val AUTUMN_END_DAY = 5
+
+    private val SPRING_START_MONTH = Calendar.FEBRUARY
+    private val SPRING_START_DAY = 7
+    private val SPRING_END_MONTH = Calendar.AUGUST
+    private val SPRING_END_DAY = 31
 
     private val timeSlots = mapOf(
         "08:00" to "09:35", "09:50" to "11:25", "11:55" to "13:30",
@@ -70,7 +82,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isRefreshing = MutableLiveData<Boolean>()
     val isRefreshing: LiveData<Boolean> = _isRefreshing
 
-    private val _navigationMode = MutableLiveData(NavigationMode.TOUCH)
+    // По умолчанию ставим BOTH (и то, и другое), чтобы никого не пугать
+    private val _navigationMode = MutableLiveData(NavigationMode.BOTH)
     val navigationMode: LiveData<NavigationMode> = _navigationMode
 
     private val cacheFileName = "schedule_cache_v2.json"
@@ -78,10 +91,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         Log.d(TAG, "ViewModel: init")
-        calculateLegacySemesterStart()
-        loadAllIds()
-        loadShowEmptyLessonsMode()
+        // Сначала грузим настройки, потом всё остальное
         loadNavigationMode()
+        loadShowEmptyLessonsMode()
+        loadAllIds()
+        calculateLegacySemesterStart()
     }
 
     private fun calculateLegacySemesterStart() {
@@ -131,11 +145,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun generateWeeks(items: List<ScheduleItem>) {
         val weekList = mutableListOf<WeekItem>()
 
-        // Если пар нет - показываем только 1 пустую неделю
         if (items.isEmpty()) {
             val start = semesterStartDate
             val cal = Calendar.getInstance().apply { time = start }
-            // Находим понедельник
             while (cal.get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) {
                 cal.add(Calendar.DAY_OF_MONTH, -1)
             }
@@ -148,22 +160,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        // 1. Находим точное время последней пары
         val maxTime = items.maxOf { it.fullStartDate }
 
-        // 2. Определяем конец последней недели
         val limitCal = Calendar.getInstance().apply { timeInMillis = maxTime }
-        // Докручиваем до конца воскресенья этой недели
         while (limitCal.get(Calendar.DAY_OF_WEEK) != Calendar.SUNDAY) {
             limitCal.add(Calendar.DAY_OF_MONTH, 1)
         }
-        // Ставим конец дня
         limitCal.set(Calendar.HOUR_OF_DAY, 23)
         limitCal.set(Calendar.MINUTE, 59)
         limitCal.set(Calendar.SECOND, 59)
         val hardLimit = limitCal.time
 
-        // 3. Настраиваем итератор на начало семестра
         val weekCalendar = Calendar.getInstance().apply {
             time = semesterStartDate
             set(Calendar.HOUR_OF_DAY, 0)
@@ -176,13 +183,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val dateFormat = SimpleDateFormat("dd", Locale("ru"))
         val today = Calendar.getInstance().time
 
-        // 4. Генерируем недели, пока не упремся в hardLimit
         while (weekCalendar.time.before(hardLimit) || weekCalendar.time.time == hardLimit.time) {
-            // Ищем понедельник
             weekCalendar.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
             val startDate = weekCalendar.time
 
-            // Ищем воскресенье
             weekCalendar.set(Calendar.DAY_OF_WEEK, Calendar.SUNDAY)
             if (startDate.after(weekCalendar.time)) {
                 weekCalendar.add(Calendar.DAY_OF_MONTH, 7)
@@ -201,13 +205,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             )
 
-            // Если мы достигли недели, содержащей hardLimit (последнюю пару), прерываем
             if (endDate.time >= hardLimit.time) {
                 break
             }
 
             weekNumber++
-            // Переход к следующему понедельнику
             weekCalendar.add(Calendar.DAY_OF_MONTH, 1)
         }
 
@@ -259,7 +261,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val responseBody = if (apiSource == ApiSource.SFEDU) {
                     api.getScheduleSfedu(requestBody)
                 } else {
-                    // Берем Endpoint из настроек
                     val endpoint = ApiSettings.getRdEndpoint(getApplication())
                     api.getScheduleRdCenter(endpoint, requestBody)
                 }
@@ -577,25 +578,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         processRawSchedule(fullRawSchedule)
     }
 
-    fun setNavigationMode(isTouchMode: Boolean) {
-        val newMode = if (isTouchMode) NavigationMode.TOUCH else NavigationMode.SWIPE
-        _navigationMode.postValue(newMode)
-        val modeName = newMode.name
-        sharedPreferences.edit().putString("nav_mode", modeName).apply()
+    // --- ОБНОВЛЕННАЯ ЛОГИКА НАСТРОЙКИ НАВИГАЦИИ (3 ВАРИАНТА) ---
+
+    fun setNavigationMode(mode: NavigationMode) {
+        _navigationMode.postValue(mode)
+        sharedPreferences.edit().putString("nav_mode", mode.name).apply()
+    }
+
+    private fun loadNavigationMode() {
+        val modeName = sharedPreferences.getString("nav_mode", NavigationMode.BOTH.name)
+        val mode = try {
+            NavigationMode.valueOf(modeName ?: NavigationMode.BOTH.name)
+        } catch (e: Exception) {
+            NavigationMode.BOTH // По умолчанию - и то, и другое
+        }
+        _navigationMode.postValue(mode)
     }
 
     private fun loadShowEmptyLessonsMode() {
         val shouldShow = sharedPreferences.getBoolean("show_empty_lessons", true)
         _showEmptyLessons.postValue(shouldShow)
-    }
-
-    private fun loadNavigationMode() {
-        val modeName = sharedPreferences.getString("nav_mode", NavigationMode.TOUCH.name)
-        val mode = try {
-            NavigationMode.valueOf(modeName ?: NavigationMode.TOUCH.name)
-        } catch (e: Exception) {
-            NavigationMode.TOUCH
-        }
-        _navigationMode.postValue(mode)
     }
 }

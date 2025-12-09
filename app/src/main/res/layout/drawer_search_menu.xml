@@ -165,10 +165,11 @@
             android:textColor="#AAAAAA"
             android:layout_marginBottom="8dp"/>
 
-        <RadioGroup
-            android:id="@+id/radioGroupSource"
+        <LinearLayout
+            android:id="@+id/containerSourceSelection"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:orientation="vertical"
             android:layout_marginBottom="24dp">
 
             <RadioButton
@@ -180,7 +181,6 @@
                 android:buttonTint="#FFFFFF"
                 android:paddingVertical="8dp"/>
 
-            <!-- Контейнер для RDCenter + Кнопка редактирования -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -192,12 +192,11 @@
                     android:layout_width="0dp"
                     android:layout_weight="1"
                     android:layout_height="wrap_content"
-                    android:text="ИКТИБ Расписание"
+                    android:text="ИКТИБ Расписание (Без входа)"
                     android:textColor="#FFFFFF"
                     android:buttonTint="#FFFFFF"
                     android:paddingVertical="8dp"/>
 
-                <!-- КНОПКА РЕДАКТИРОВАНИЯ -->
                 <ImageView
                     android:id="@+id/btnEditUrl"
                     android:layout_width="40dp"
@@ -209,7 +208,7 @@
                     android:clickable="true"
                     android:focusable="true"/>
             </LinearLayout>
-        </RadioGroup>
+        </LinearLayout>
 
         <com.google.android.material.switchmaterial.SwitchMaterial
             android:id="@+id/switchShowEmpty"
@@ -219,6 +218,44 @@
             android:textColor="#FFFFFF"
             android:paddingVertical="8dp"
             android:layout_marginBottom="8dp"/>
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Режим навигации:"
+            android:textColor="#AAAAAA"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="8dp"/>
+
+        <RadioGroup
+            android:id="@+id/rgNavMode"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp">
+
+            <RadioButton
+                android:id="@+id/rbSwipeOnly"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Только свайпы"
+                android:textColor="#FFFFFF"
+                android:buttonTint="#FFFFFF"/>
+
+            <RadioButton
+                android:id="@+id/rbTouchOnly"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Только касания"
+                android:textColor="#FFFFFF"
+                android:buttonTint="#FFFFFF"/>
+
+            <RadioButton
+                android:id="@+id/rbBoth"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Свайпы и касания (Both)"
+                android:textColor="#FFFFFF"
+                android:buttonTint="#FFFFFF"/>
+        </RadioGroup>
 
         <Space
             android:layout_width="match_parent"

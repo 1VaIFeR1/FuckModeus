@@ -1,7 +1,7 @@
 package com.fuck.modeus.ui
 
 import android.annotation.SuppressLint
-import android.content.DialogInterface // ВАЖНО: Добавил для диалога
+import android.content.DialogInterface
 import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
@@ -16,7 +16,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.EditText
 import android.widget.ImageButton
-import android.widget.ImageView // ВАЖНО: Добавил
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.RadioButton
@@ -61,6 +61,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var viewPager: ViewPager2
     private lateinit var swipeRefreshLayout: ScrollAwareSwipeRefreshLayout
 
+    private lateinit var gestureDetector: GestureDetector
     private var selectedTarget: ScheduleTarget? = null
     private var headerHeightPx = 0
 
@@ -70,28 +71,22 @@ class MainActivity : AppCompatActivity() {
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
         setContentView(R.layout.activity_main)
 
-        // --- 1. СКРЫВАЕМ СИСТЕМНЫЕ ПАНЕЛИ (ЖЕСТКО) ---
         hideSystemUI()
 
         drawerLayout = findViewById(R.id.drawerLayout)
         viewPager = findViewById(R.id.viewPager)
         swipeRefreshLayout = findViewById(R.id.swipeRefreshLayout)
 
-        // --- 2. ОТСТУПЫ ПОД КАМЕРУ (Safe Area) ---
-        // Используем displayCutout, так как systemBars теперь скрыты (размер 0)
         val mainContentContainer = findViewById<View>(R.id.mainContentContainer)
         ViewCompat.setOnApplyWindowInsetsListener(mainContentContainer) { view, windowInsets ->
-            // Берем insets от выреза (камеры) и системных панелей (на случай если они вылезут)
             val insets = windowInsets.getInsets(WindowInsetsCompat.Type.displayCutout() or WindowInsetsCompat.Type.systemBars())
-
-            // Ставим padding, чтобы контент не налез на камеру
             view.setPadding(insets.left, insets.top, insets.right, insets.bottom)
-
             val density = resources.displayMetrics.density
             headerHeightPx = insets.top + (70 * density).toInt()
-
             WindowInsetsCompat.CONSUMED
         }
+
+        initGestureDetector()
 
         setupMainContent()
         setupDrawer()
@@ -105,33 +100,41 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Метод для скрытия интерфейса
     private fun hideSystemUI() {
-        // Говорим системе, что мы сами управляем контентом
         WindowCompat.setDecorFitsSystemWindows(window, false)
-
         val controller = WindowCompat.getInsetsController(window, window.decorView)
-        // Скрываем и Статус-бар, и Навигацию
         controller.hide(WindowInsetsCompat.Type.systemBars())
-        // При свайпе они появятся ненадолго и исчезнут
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-
-        // Делаем фон прозрачным для надежности
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
-
-        // Для старых API и специфичных прошивок (на всякий случай)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
     }
 
-    // Если пользователь свернул приложение и вернулся — убеждаемся, что бар снова скрыт
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) {
-            hideSystemUI()
-        }
+        if (hasFocus) hideSystemUI()
+    }
+
+    private fun initGestureDetector() {
+        gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onSingleTapUp(e: MotionEvent): Boolean {
+                val mode = viewModel.navigationMode.value
+                if (mode == NavigationMode.TOUCH || mode == NavigationMode.BOTH) {
+                    val width = resources.displayMetrics.widthPixels
+                    if (e.x < width * 0.35) {
+                        viewPager.currentItem = viewPager.currentItem - 1
+                        return true
+                    }
+                    if (e.x > width * 0.65) {
+                        viewPager.currentItem = viewPager.currentItem + 1
+                        return true
+                    }
+                }
+                return false
+            }
+        })
     }
 
     private fun setupMainContent() {
@@ -255,13 +258,16 @@ class MainActivity : AppCompatActivity() {
 
         val rbSfedu = navigationView.findViewById<RadioButton>(R.id.rbSfedu)
         val rbRdCenter = navigationView.findViewById<RadioButton>(R.id.rbRdCenter)
-        val rgSource = navigationView.findViewById<RadioGroup>(R.id.radioGroupSource)
         val switchEmpty = navigationView.findViewById<SwitchMaterial>(R.id.switchShowEmpty)
         val btnLogout = navigationView.findViewById<View>(R.id.btnLogoutInternal)
-
-        // --- ДОБАВЛЕНО: Кнопка редактирования URL ---
         val btnEditUrl = navigationView.findViewById<ImageView>(R.id.btnEditUrl)
 
+        // Кнопки режимов навигации
+        val rbSwipe = navigationView.findViewById<RadioButton>(R.id.rbSwipeOnly)
+        val rbTouch = navigationView.findViewById<RadioButton>(R.id.rbTouchOnly)
+        val rbBoth = navigationView.findViewById<RadioButton>(R.id.rbBoth)
+
+        // Инициализация источника API
         val currentSource = ApiSettings.getApiSource(this)
         if (currentSource == ApiSource.SFEDU) {
             rbSfedu.isChecked = true
@@ -271,23 +277,47 @@ class MainActivity : AppCompatActivity() {
             btnLogout.visibility = View.GONE
         }
 
-        // --- ДОБАВЛЕНО: Слушатель нажатия на карандаш ---
-        btnEditUrl.setOnClickListener {
-            showUrlEditDialog()
+        btnEditUrl.setOnClickListener { showUrlEditDialog() }
+
+        // Слушатели источника (вручную, так как кастомный layout)
+        rbSfedu.setOnClickListener {
+            ApiSettings.setApiSource(this, ApiSource.SFEDU)
+            rbSfedu.isChecked = true
+            rbRdCenter.isChecked = false
+            btnLogout.visibility = View.VISIBLE
+            Toast.makeText(this, "Источник: SFEDU Modeus", Toast.LENGTH_SHORT).show()
+        }
+        rbRdCenter.setOnClickListener {
+            ApiSettings.setApiSource(this, ApiSource.RDCENTER)
+            rbSfedu.isChecked = false
+            rbRdCenter.isChecked = true
+            btnLogout.visibility = View.GONE
+            Toast.makeText(this, "Источник: ИКТИБ (RDCenter)", Toast.LENGTH_SHORT).show()
         }
 
-        rgSource.setOnCheckedChangeListener { _, checkedId ->
-            val newSource = if (checkedId == R.id.rbSfedu) ApiSource.SFEDU else ApiSource.RDCENTER
-            ApiSettings.setApiSource(this, newSource)
-            btnLogout.visibility = if (newSource == ApiSource.SFEDU) View.VISIBLE else View.GONE
-            Toast.makeText(this, "Источник изменен. Обновите расписание.", Toast.LENGTH_SHORT).show()
+        // Инициализация режима навигации из ViewModel
+        viewModel.navigationMode.observe(this) { mode ->
+            viewPager.isUserInputEnabled = (mode == NavigationMode.SWIPE || mode == NavigationMode.BOTH)
+
+            // Обновляем UI (галочки), чтобы при перезаходе было видно
+            when (mode) {
+                NavigationMode.SWIPE -> rbSwipe.isChecked = true
+                NavigationMode.TOUCH -> rbTouch.isChecked = true
+                NavigationMode.BOTH -> rbBoth.isChecked = true
+                else -> rbBoth.isChecked = true
+            }
         }
 
+        rbSwipe.setOnClickListener { viewModel.setNavigationMode(NavigationMode.SWIPE) }
+        rbTouch.setOnClickListener { viewModel.setNavigationMode(NavigationMode.TOUCH) }
+        rbBoth.setOnClickListener { viewModel.setNavigationMode(NavigationMode.BOTH) }
+
+        // Свитч пустых пар
         viewModel.showEmptyLessons.observe(this) {
             if (switchEmpty.isChecked != it) switchEmpty.isChecked = it
         }
-
         switchEmpty.setOnCheckedChangeListener { _, isChecked -> viewModel.setShowEmptyLessons(isChecked) }
+
         btnLogout.setOnClickListener { performLogout() }
 
         setupSearchLogic(navigationView)
@@ -435,6 +465,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
     private fun showUrlEditDialog() {
         val context = this
 
@@ -467,7 +498,6 @@ class MainActivity : AppCompatActivity() {
         AlertDialog.Builder(context)
             .setTitle("Настройка API RDCenter")
             .setView(container)
-            // ИСПРАВЛЕНО: Явно указаны типы переменных
             .setPositiveButton("Сохранить") { dialog: DialogInterface, which: Int ->
                 val newBase = inputBase.text.toString().trim()
                 val newEndpoint = inputEndpoint.text.toString().trim()
@@ -483,7 +513,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             .setNegativeButton("Отмена", null)
-            // ИСПРАВЛЕНО: Явно указаны типы переменных
             .setNeutralButton("Сброс") { dialog: DialogInterface, which: Int ->
                 ApiSettings.resetRdSettings(context)
                 if (ApiSettings.getApiSource(context) == ApiSource.RDCENTER) {
@@ -492,5 +521,25 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(context, "Настройки сброшены", Toast.LENGTH_SHORT).show()
             }
             .show()
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
+        if (ev != null) {
+            // Если меню открыто - не трогаем
+            if (drawerLayout.isDrawerOpen(GravityCompat.END)) {
+                return super.dispatchTouchEvent(ev)
+            }
+
+            val isContentArea = ev.y > headerHeightPx
+            val mode = viewModel.navigationMode.value ?: NavigationMode.BOTH
+            val isTouchAllowed = (mode == NavigationMode.TOUCH || mode == NavigationMode.BOTH)
+
+            if (isTouchAllowed && isContentArea && ::gestureDetector.isInitialized) {
+                if (gestureDetector.onTouchEvent(ev)) {
+                    return true
+                }
+            }
+        }
+        return super.dispatchTouchEvent(ev)
     }
 }
