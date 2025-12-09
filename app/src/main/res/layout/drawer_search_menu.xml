@@ -4,6 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
+    <!-- ГЛАВНОЕ МЕНЮ (ПОИСК) - БЕЗ ИЗМЕНЕНИЙ -->
     <RelativeLayout
         android:id="@+id/layout_main_menu"
         android:layout_width="match_parent"
@@ -116,6 +117,7 @@
         </ScrollView>
     </RelativeLayout>
 
+    <!-- МЕНЮ НАСТРОЕК (ИЗМЕНЕНО) -->
     <LinearLayout
         android:id="@+id/layout_settings_menu"
         android:layout_width="match_parent"
@@ -218,49 +220,74 @@
             android:textColor="#FFFFFF"
             android:paddingVertical="8dp"
             android:layout_marginBottom="8dp"/>
+
+        <!-- НОВОЕ: ВЫПАДАЮЩИЙ СПИСОК ВМЕСТО КУЧИ КНОПОК -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Режим навигации:"
             android:textColor="#AAAAAA"
             android:layout_marginTop="8dp"
-            android:layout_marginBottom="8dp"/>
+            android:layout_marginBottom="4dp"/>
 
-        <RadioGroup
-            android:id="@+id/rgNavMode"
+        <Spinner
+            android:id="@+id/spinnerNavMode"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp">
-
-            <RadioButton
-                android:id="@+id/rbSwipeOnly"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Только свайпы"
-                android:textColor="#FFFFFF"
-                android:buttonTint="#FFFFFF"/>
-
-            <RadioButton
-                android:id="@+id/rbTouchOnly"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Только касания"
-                android:textColor="#FFFFFF"
-                android:buttonTint="#FFFFFF"/>
-
-            <RadioButton
-                android:id="@+id/rbBoth"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Свайпы и касания (Both)"
-                android:textColor="#FFFFFF"
-                android:buttonTint="#FFFFFF"/>
-        </RadioGroup>
+            android:minHeight="48dp"
+            android:layout_marginBottom="16dp"
+            android:backgroundTint="#FFFFFF" />
 
         <Space
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"/>
+
+        <!-- КНОПКА ПОКАЗАТЬ/СКРЫТЬ ДОПОЛНИТЕЛЬНО -->
+        <TextView
+            android:id="@+id/btnToggleAdvanced"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Дополнительные опции..."
+            android:textColor="#AAAAAA"
+            android:gravity="center"
+            android:padding="12dp"
+            android:background="?attr/selectableItemBackground"
+            android:layout_marginBottom="8dp"/>
+
+        <!-- КОНТЕЙНЕР ДЛЯ РЕДКИХ КНОПОК (Скрыт по умолчанию) -->
+        <LinearLayout
+            android:id="@+id/containerAdvanced"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnUpdateDb"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Обновить базу (ID)"
+                android:textColor="@android:color/white"
+                android:backgroundTint="?attr/colorPrimary"
+                app:icon="@android:drawable/ic_popup_sync"
+                app:iconTint="@android:color/white"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_marginBottom="8dp"/>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnExportDb"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Экспорт базы (Поделиться)"
+                android:textColor="@android:color/white"
+                android:backgroundTint="#4CAF50"
+                app:icon="@android:drawable/ic_menu_share"
+                app:iconTint="@android:color/white"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_marginBottom="8dp"/>
+
+        </LinearLayout>
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnLogoutInternal"

@@ -1,5 +1,6 @@
 package com.fuck.modeus.network
 
+import com.fuck.modeus.data.Attendee
 import com.google.gson.JsonObject
 import okhttp3.ResponseBody
 import retrofit2.http.Body
@@ -22,4 +23,28 @@ interface ApiService {
         @Url url: String,
         @Body body: JsonObject
     ): ResponseBody
+
+    // --- НОВЫЕ МЕТОДЫ ДЛЯ ОБНОВЛЕНИЯ БАЗЫ ---
+
+    // 1. Получить всех людей (размер 10000+, чтобы выкачать всех)
+    @POST("schedule-calendar-v2/api/people/persons/search")
+    suspend fun getAllPersons(
+        @Body body: JsonObject = JsonObject().apply {
+            addProperty("size", 20000)
+            addProperty("fullName", "")
+        }
+    ): ResponseBody
+
+    // 2. Получить все аудитории
+    @POST("schedule-calendar-v2/api/campus/rooms/search")
+    suspend fun getAllRooms(
+        @Body body: JsonObject = JsonObject().apply {
+            addProperty("size", 5000)
+            addProperty("name", "")
+        }
+    ): ResponseBody
+    @retrofit2.http.GET("schedule-calendar-v2/api/calendar/events/{id}/attendees")
+    suspend fun getEventAttendees(
+        @retrofit2.http.Path("id") eventId: String
+    ): List<Attendee>
 }

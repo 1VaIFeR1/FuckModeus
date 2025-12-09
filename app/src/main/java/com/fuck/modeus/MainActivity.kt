@@ -249,23 +249,79 @@ class MainActivity : AppCompatActivity() {
 
         drawerLayout.addDrawerListener(object : DrawerLayout.SimpleDrawerListener() {
             override fun onDrawerClosed(drawerView: View) {
+                // --- СКРЫВАЕМ КЛАВИАТУРУ ПРИ ЗАКРЫТИИ МЕНЮ ---
+                hideKeyboard()
+
                 if (layoutSettings.visibility == View.VISIBLE) {
                     layoutSettings.visibility = View.GONE
                     layoutMain.visibility = View.VISIBLE
                 }
             }
+            override fun onDrawerStateChanged(newState: Int) {
+                if (newState == DrawerLayout.STATE_DRAGGING) {
+                    hideKeyboard()
+                }
+            }
         })
 
+        // Элементы
         val rbSfedu = navigationView.findViewById<RadioButton>(R.id.rbSfedu)
         val rbRdCenter = navigationView.findViewById<RadioButton>(R.id.rbRdCenter)
         val switchEmpty = navigationView.findViewById<SwitchMaterial>(R.id.switchShowEmpty)
         val btnLogout = navigationView.findViewById<View>(R.id.btnLogoutInternal)
         val btnEditUrl = navigationView.findViewById<ImageView>(R.id.btnEditUrl)
 
-        // Кнопки режимов навигации
-        val rbSwipe = navigationView.findViewById<RadioButton>(R.id.rbSwipeOnly)
-        val rbTouch = navigationView.findViewById<RadioButton>(R.id.rbTouchOnly)
-        val rbBoth = navigationView.findViewById<RadioButton>(R.id.rbBoth)
+        // Кнопки для БД
+        val btnUpdateDb = navigationView.findViewById<View>(R.id.btnUpdateDb)
+        val btnExportDb = navigationView.findViewById<View>(R.id.btnExportDb)
+
+        // --- НОВЫЕ ЭЛЕМЕНТЫ UI ---
+        val spinnerNav = navigationView.findViewById<android.widget.Spinner>(R.id.spinnerNavMode)
+        val btnToggleAdv = navigationView.findViewById<TextView>(R.id.btnToggleAdvanced)
+        val containerAdv = navigationView.findViewById<LinearLayout>(R.id.containerAdvanced)
+
+        // --- ЛОГИКА "ДОПОЛНИТЕЛЬНО" ---
+        btnToggleAdv.setOnClickListener {
+            if (containerAdv.visibility == View.VISIBLE) {
+                containerAdv.visibility = View.GONE
+                btnToggleAdv.text = "Дополнительные опции..."
+            } else {
+                containerAdv.visibility = View.VISIBLE
+                btnToggleAdv.text = "Скрыть дополнительные опции"
+            }
+        }
+
+        // --- ЛОГИКА СПИННЕРА НАВИГАЦИИ ---
+        // Создаем адаптер для спиннера
+        val modes = arrayOf("Только свайпы", "Только касания", "Свайпы и касания (Both)")
+        // Используем simple_spinner_dropdown_item для темной темы (текст белый)
+        val adapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, modes)
+        spinnerNav.adapter = adapter
+
+        // Устанавливаем текущее значение
+        val currentMode = viewModel.navigationMode.value ?: NavigationMode.BOTH
+        val selectionIndex = when(currentMode) {
+            NavigationMode.SWIPE -> 0
+            NavigationMode.TOUCH -> 1
+            NavigationMode.BOTH -> 2
+        }
+        spinnerNav.setSelection(selectionIndex)
+
+        // Слушатель выбора
+        spinnerNav.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                // Изменяем цвет текста выбранного элемента на белый (фикс для темной темы)
+                (view as? TextView)?.setTextColor(Color.WHITE)
+
+                val newMode = when(position) {
+                    0 -> NavigationMode.SWIPE
+                    1 -> NavigationMode.TOUCH
+                    else -> NavigationMode.BOTH
+                }
+                viewModel.setNavigationMode(newMode)
+            }
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+        }
 
         // Инициализация источника API
         val currentSource = ApiSettings.getApiSource(this)
@@ -279,7 +335,6 @@ class MainActivity : AppCompatActivity() {
 
         btnEditUrl.setOnClickListener { showUrlEditDialog() }
 
-        // Слушатели источника (вручную, так как кастомный layout)
         rbSfedu.setOnClickListener {
             ApiSettings.setApiSource(this, ApiSource.SFEDU)
             rbSfedu.isChecked = true
@@ -295,28 +350,27 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Источник: ИКТИБ (RDCenter)", Toast.LENGTH_SHORT).show()
         }
 
-        // Инициализация режима навигации из ViewModel
-        viewModel.navigationMode.observe(this) { mode ->
-            viewPager.isUserInputEnabled = (mode == NavigationMode.SWIPE || mode == NavigationMode.BOTH)
-
-            // Обновляем UI (галочки), чтобы при перезаходе было видно
-            when (mode) {
-                NavigationMode.SWIPE -> rbSwipe.isChecked = true
-                NavigationMode.TOUCH -> rbTouch.isChecked = true
-                NavigationMode.BOTH -> rbBoth.isChecked = true
-                else -> rbBoth.isChecked = true
-            }
-        }
-
-        rbSwipe.setOnClickListener { viewModel.setNavigationMode(NavigationMode.SWIPE) }
-        rbTouch.setOnClickListener { viewModel.setNavigationMode(NavigationMode.TOUCH) }
-        rbBoth.setOnClickListener { viewModel.setNavigationMode(NavigationMode.BOTH) }
-
-        // Свитч пустых пар
         viewModel.showEmptyLessons.observe(this) {
             if (switchEmpty.isChecked != it) switchEmpty.isChecked = it
         }
         switchEmpty.setOnCheckedChangeListener { _, isChecked -> viewModel.setShowEmptyLessons(isChecked) }
+
+        // Логика кнопок БД
+        btnUpdateDb.setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("Обновление базы")
+                .setMessage("Скачать актуальные данные?")
+                .setPositiveButton("Да") { _, _ ->
+                    drawerLayout.closeDrawer(GravityCompat.END)
+                    viewModel.updateDatabase()
+                }
+                .setNegativeButton("Отмена", null)
+                .show()
+        }
+
+        btnExportDb.setOnClickListener {
+            exportDatabaseFile()
+        }
 
         btnLogout.setOnClickListener { performLogout() }
 
@@ -374,7 +428,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun selectTargetAndFind(target: ScheduleTarget) {
-        viewModel.loadSchedule(target.person_id)
+        // FIX: person_id -> id
+        viewModel.loadSchedule(target.id)
         drawerLayout.closeDrawer(GravityCompat.END)
     }
 
@@ -416,14 +471,36 @@ class MainActivity : AppCompatActivity() {
 
         tvGroup.text = "👥 Группа: ${item.groupCode ?: "не указана"} (участников: ${item.teamSize ?: "?"})"
         dialog.show()
+        val btnAttendees = dialogView.findViewById<View>(R.id.btnShowAttendees)
+        if (ApiSettings.getApiSource(this) == ApiSource.SFEDU) {
+            btnAttendees.visibility = View.VISIBLE
+            btnAttendees.setOnClickListener {
+                showAttendeesDialog(item.id) // Передаем ID события
+            }
+        } else {
+            btnAttendees.visibility = View.GONE
+        }
+
+        dialog.show()
     }
 
     private fun searchFor(name: String) {
-        drawerLayout.openDrawer(GravityCompat.END)
-        val etSearch = findViewById<NavigationView>(R.id.navigationView).findViewById<EditText>(R.id.etSearch)
-        etSearch.setText(name)
-        etSearch.setSelection(name.length)
-        viewModel.search(name)
+        // 1. Пытаемся найти ID по имени в нашей базе
+        val targetId = viewModel.findTargetIdByName(name)
+
+        if (targetId != null) {
+            // 2. Если нашли — сразу грузим!
+            viewModel.loadSchedule(targetId)
+            Toast.makeText(this, "Загрузка: $name", Toast.LENGTH_SHORT).show()
+            // Drawer не открываем, клавиатуру не показываем
+        } else {
+            // 3. Если не нашли (например, имя неполное) — открываем поиск как раньше
+            drawerLayout.openDrawer(GravityCompat.END)
+            val etSearch = findViewById<NavigationView>(R.id.navigationView).findViewById<EditText>(R.id.etSearch)
+            etSearch.setText(name)
+            etSearch.setSelection(name.length)
+            viewModel.search(name)
+        }
     }
 
     private fun observeViewModel() {
@@ -525,11 +602,24 @@ class MainActivity : AppCompatActivity() {
 
     override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
         if (ev != null) {
-            // Если меню открыто - не трогаем
+            // Если меню открыто — не перехватываем жесты, но проверяем клик мимо клавиатуры
             if (drawerLayout.isDrawerOpen(GravityCompat.END)) {
+                // Если тапнули (ACTION_DOWN)
+                if (ev.action == MotionEvent.ACTION_DOWN) {
+                    val v = currentFocus
+                    if (v is EditText) {
+                        val outRect = android.graphics.Rect()
+                        v.getGlobalVisibleRect(outRect)
+                        // Если тапнули НЕ по полю ввода — скрываем клаву
+                        if (!outRect.contains(ev.rawX.toInt(), ev.rawY.toInt())) {
+                            hideKeyboard()
+                        }
+                    }
+                }
                 return super.dispatchTouchEvent(ev)
             }
 
+            // Логика жестов по краям (только если меню закрыто)
             val isContentArea = ev.y > headerHeightPx
             val mode = viewModel.navigationMode.value ?: NavigationMode.BOTH
             val isTouchAllowed = (mode == NavigationMode.TOUCH || mode == NavigationMode.BOTH)
@@ -541,5 +631,114 @@ class MainActivity : AppCompatActivity() {
             }
         }
         return super.dispatchTouchEvent(ev)
+    }
+    private fun exportDatabaseFile() {
+        try {
+            val dbFile = java.io.File(filesDir, "allid_v2.json")
+            if (!dbFile.exists()) {
+                Toast.makeText(this, "База данных еще не создана", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            // Создаем временный файл в кеше, чтобы к нему был доступ у других приложений через FileProvider
+            // НО! Чтобы не мучаться с FileProvider (настройка XML), сделаем проще:
+            // Просто прочитаем контент и отправим как Текст (если файл не гигантский)
+            // ИЛИ используем простой Uri.fromFile (может не сработать на Android 7+ без провайдера).
+
+            // Самый надежный "ленивый" способ без настройки Provider'а в манифесте:
+            // Копируем файл в публичную директорию (Download)
+
+            /* НО, ЧТОБЫ ТЫ МОГ ЕГО ГЛЯНУТЬ ПРЯМО СЕЙЧАС: */
+            val content = dbFile.readText()
+
+            // Если файл слишком большой, Intent может упасть.
+            // Давай лучше сохраним копию в папку Download.
+
+            val downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+            val destFile = java.io.File(downloadDir, "modeus_db_dump.json")
+
+            dbFile.copyTo(destFile, overwrite = true)
+
+            Toast.makeText(this, "Сохранено в Загрузки: modeus_db_dump.json", Toast.LENGTH_LONG).show()
+
+            // Попробуем открыть
+            /*
+            val intent = Intent(Intent.ACTION_VIEW)
+            intent.setDataAndType(Uri.fromFile(destFile), "text/json")
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            startActivity(Intent.createChooser(intent, "Открыть базу"))
+            */
+
+        } catch (e: Exception) {
+            Toast.makeText(this, "Ошибка экспорта: ${e.message}", Toast.LENGTH_LONG).show()
+            e.printStackTrace()
+        }
+    }
+    private fun hideKeyboard() {
+        val view = this.currentFocus
+        if (view != null) {
+            val imm = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            imm.hideSoftInputFromWindow(view.windowToken, 0)
+            view.clearFocus()
+        }
+    }
+    private fun showAttendeesDialog(eventId: String) {
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_attendees, null)
+        val dialog = AlertDialog.Builder(this)
+            .setView(dialogView)
+            .create()
+
+        val rv = dialogView.findViewById<RecyclerView>(R.id.rvAttendees)
+        val pb = dialogView.findViewById<ProgressBar>(R.id.pbAttendees)
+        val tvError = dialogView.findViewById<TextView>(R.id.tvAttendeesError)
+        val btnClose = dialogView.findViewById<View>(R.id.btnCloseAttendees)
+
+        val adapter = AttendeesAdapter { attendee ->
+            // При клике на участника
+            dialog.dismiss() // Закрываем список
+            viewModel.loadSchedule(attendee.personId) // Грузим расписание этого человека
+            Toast.makeText(this, "Загрузка: ${attendee.fullName}", Toast.LENGTH_SHORT).show()
+        }
+        rv.layoutManager = LinearLayoutManager(this)
+        rv.adapter = adapter
+
+        btnClose.setOnClickListener { dialog.dismiss() }
+
+        // Запускаем загрузку
+        viewModel.loadEventAttendees(eventId)
+
+        // Наблюдаем за состоянием (нужно удалить наблюдателей при закрытии, но AlertDialog сам это не делает.
+        // Поэтому используем viewLifecycleOwner от Activity, но аккуратно)
+
+        // Лучше использовать отдельные обсерверы внутри диалога, но здесь мы в Activity.
+        // Просто подписываемся. LiveData пришлет обновление.
+
+        viewModel.attendeesLoading.observe(this) { isLoading ->
+            pb.visibility = if (isLoading) View.VISIBLE else View.GONE
+            rv.visibility = if (isLoading) View.GONE else View.VISIBLE
+            tvError.visibility = View.GONE
+        }
+
+        viewModel.attendeesList.observe(this) { list ->
+            if (list.isNotEmpty()) {
+                adapter.submitList(list)
+                rv.visibility = View.VISIBLE
+                tvError.visibility = View.GONE
+            } else {
+                // Если загрузка кончилась, а список пуст - значит ошибка или никого нет
+                if (viewModel.attendeesLoading.value == false) {
+                    rv.visibility = View.GONE
+                    tvError.visibility = View.VISIBLE
+                    tvError.text = "Список пуст или ошибка доступа"
+                }
+            }
+        }
+
+        dialog.setOnDismissListener {
+            // Очищаем список при закрытии, чтобы следующий диалог не показал старых данных на долю секунды
+            // Можно добавить метод clearAttendees в ViewModel
+        }
+
+        dialog.show()
     }
 }

@@ -56,6 +56,15 @@
             android:background="?attr/selectableItemBackground"
             android:paddingVertical="4dp"
             android:text="👥 Группа: КОД ГРУППЫ (участников: 25)" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnShowAttendees"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="👥 Участники"
+            android:textColor="@android:color/white"
+            android:backgroundTint="?attr/colorPrimary"
+            android:layout_marginTop="16dp"
+            style="@style/Widget.MaterialComponents.Button"/>
 
     </LinearLayout>
 </ScrollView>

@@ -52,7 +52,7 @@ class SearchAdapter(
 
     class DiffCallback : DiffUtil.ItemCallback<ScheduleTarget>() {
         override fun areItemsTheSame(oldItem: ScheduleTarget, newItem: ScheduleTarget): Boolean =
-            oldItem.person_id == newItem.person_id
+            oldItem.id == newItem.id
 
         override fun areContentsTheSame(oldItem: ScheduleTarget, newItem: ScheduleTarget): Boolean =
             oldItem == newItem

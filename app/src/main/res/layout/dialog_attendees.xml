@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:background="#545454">
+
+    <TextView
+        android:id="@+id/tvAttendeesTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Участники занятия"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="16dp"
+        android:gravity="center"
+        android:textColor="?attr/colorOnSurface"/>
+
+    <ProgressBar
+        android:id="@+id/pbAttendees"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:visibility="visible"/>
+
+    <TextView
+        android:id="@+id/tvAttendeesError"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Не удалось загрузить список"
+        android:textColor="#B00020"
+        android:gravity="center"
+        android:visibility="gone"/>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvAttendees"
+        android:layout_width="match_parent"
+        android:layout_height="300dp"
+        android:visibility="gone"/>
+    <!-- Фиксированная высота, чтобы диалог не был бесконечным -->
+
+    <Button
+        android:id="@+id/btnCloseAttendees"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Закрыть"
+        android:layout_marginTop="8dp"/>
+
+</LinearLayout>
