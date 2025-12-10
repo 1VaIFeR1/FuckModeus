@@ -7,16 +7,15 @@ object TargetType {
     const val ROOM = "ROOM"
 }
 
+// Основная модель (V2)
 data class ScheduleTarget(
     val name: String,
 
-    @SerializedName("person_id") val id: String,
+    // Используем alternate, чтобы читать и старое поле "id", и новое "person_id"
+    @SerializedName("person_id", alternate = ["id"])
+    val id: String,
 
     val type: String = TargetType.PERSON,
-
-    // Новое поле для поиска (например "Преподаватель", "Аудитория")
-    // Оно не обязательно должно быть в JSON, мы заполним его сами при создании
     val description: String = "",
-
     var isPinned: Boolean = false
 )

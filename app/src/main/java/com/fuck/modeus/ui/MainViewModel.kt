@@ -13,6 +13,7 @@ import com.fuck.modeus.network.RetrofitInstance
 import com.google.gson.Gson
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
+import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -102,7 +103,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // =================================================================================
     // МИГРАЦИЯ И ЗАГРУЗКА БАЗЫ
     // =================================================================================
-
+    private data class LegacyTarget(
+        @SerializedName("name") val name: String,
+        @SerializedName("person_id") val id: String
+    )
     private fun loadAllIds() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -110,7 +114,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val dbFile = File(context.filesDir, dbFileName)
 
                 if (!dbFile.exists()) {
-                    Log.d(TAG, "DB: Локальная база не найдена. Копируем allid.txt из assets...")
                     try {
                         context.assets.open("allid.txt").use { input ->
                             dbFile.outputStream().use { output ->
@@ -128,17 +131,49 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     context.assets.open("allid.txt").bufferedReader().use { it.readText() }
                 }
 
-                val type = object : TypeToken<List<ScheduleTarget>>() {}.type
-                val targets: List<ScheduleTarget> = Gson().fromJson(jsonString, type)
+                val gson = Gson()
+                val targets = mutableListOf<ScheduleTarget>()
 
-                // Фильтруем дубликаты
+                try {
+                    // ПОПЫТКА 1: Читаем как новую структуру (v2)
+                    // Пытаемся понять, есть ли там поле type, которое есть только в v2
+                    if (jsonString.contains("\"type\"")) {
+                        val type = object : TypeToken<List<ScheduleTarget>>() {}.type
+                        val v2Targets: List<ScheduleTarget> = gson.fromJson(jsonString, type)
+                        targets.addAll(v2Targets)
+                    } else {
+                        throw Exception("Old format detected")
+                    }
+                } catch (e: Exception) {
+                    // ПОПЫТКА 2: Читаем как старую структуру (Legacy)
+                    Log.w(TAG, "DB: Читаем как Legacy формат (старая база)...")
+                    try {
+                        val legacyType = object : TypeToken<List<LegacyTarget>>() {}.type
+                        val legacyList: List<LegacyTarget> = gson.fromJson(jsonString, legacyType)
+
+                        // Маппим старое в новое
+                        val mapped = legacyList.map { legacy ->
+                            ScheduleTarget(
+                                name = legacy.name,
+                                id = legacy.id,
+                                type = TargetType.PERSON,
+                                description = "", // Явно задаем пустоту
+                                isPinned = false
+                            )
+                        }
+                        targets.addAll(mapped)
+                    } catch (e2: Exception) {
+                        Log.e(TAG, "DB: Фатальная ошибка парсинга", e2)
+                        _error.postValue("Ошибка чтения базы данных")
+                    }
+                }
+
                 allTargets = targets.distinctBy { it.id }
-                Log.d(TAG, "DB: Загружено ${allTargets.size} записей.")
+                Log.d(TAG, "DB: Итого загружено ${allTargets.size} записей.")
 
                 loadPinnedStatus()
             } catch (e: Exception) {
                 Log.e(TAG, "DB: Критическая ошибка", e)
-                _error.postValue("Ошибка базы данных: ${e.message}")
             }
         }
     }
@@ -284,13 +319,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _searchInProgress.postValue(true)
             delay(300L) // Debounce
 
-            // Ищем по имени ИЛИ по описанию (тегам)
-            val filtered = allTargets.filter {
-                it.name.contains(query, ignoreCase = true) ||
-                        it.description.contains(query, ignoreCase = true)
+            // ИСПРАВЛЕНИЕ КРАША ЗДЕСЬ:
+            // Используем (it.description ?: "") чтобы избежать NullPointerException,
+            // если Gson вернул null из старой базы.
+            val filtered = allTargets.filter { target ->
+                target.name.contains(query, ignoreCase = true) ||
+                        (target.description ?: "").contains(query, ignoreCase = true)
             }
 
-            // Сортируем: сначала те, у кого совпадение в начале имени
             val (startsWithName, others) = filtered.partition {
                 it.name.startsWith(query, ignoreCase = true)
             }
@@ -584,9 +620,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun loadDataFromFile(keepCurrentPosition: Boolean = false) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val fileName = getCacheFileName() // Получаем имя (например schedule_cache_v2_1.json)
-
-                // ИСПРАВЛЕНО: используем fileName, а не cacheFileName
+                val fileName = getCacheFileName()
                 val fileInputStream = getApplication<Application>().openFileInput(fileName)
                 val jsonString = fileInputStream.reader().readText()
                 fileInputStream.close()
@@ -600,9 +634,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 processRawSchedule(items)
 
-                // ИСПРАВЛЕНО: Теперь переменная keepCurrentPosition доступна
                 if (!keepCurrentPosition) {
                     setInitialPage()
+                } else {
+                    // ИСПРАВЛЕНИЕ: Если мы сохраняем позицию, нужно восстановить
+                    // правильное выделение недели для текущего отображаемого дня
+                    val currentPos = _currentPagerPosition.value ?: 0
+
+                    // Вычисляем дату, на которую смотрит пейджер
+                    val startCal = Calendar.getInstance().apply { time = semesterStartDate }
+                    toStartOfDay(startCal)
+                    startCal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+                    if (startCal.time.after(semesterStartDate)) startCal.add(Calendar.DAY_OF_MONTH, -7)
+
+                    startCal.add(Calendar.DAY_OF_YEAR, currentPos)
+                    val currentDateInPager = startCal.time
+
+                    // Обновляем выделение в списке недель
+                    updateSelectedWeek(currentDateInPager)
                 }
             } catch (e: Exception) {
                 // Если файла нет (пустой профиль) - чистим UI
@@ -612,8 +661,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 if (!keepCurrentPosition) {
                     setInitialPage()
+                } else {
+                    // Аналогично обновляем неделю даже для пустого расписания,
+                    // чтобы выделение не прыгало
+                    val currentPos = _currentPagerPosition.value ?: 0
+                    val startCal = Calendar.getInstance().apply { time = semesterStartDate }
+                    startCal.add(Calendar.DAY_OF_YEAR, currentPos)
+                    updateSelectedWeek(startCal.time)
                 }
-                // Не кидаем ошибку в тост, это нормальная ситуация
             }
         }
     }

@@ -66,6 +66,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var gestureDetector: GestureDetector
     private var selectedTarget: ScheduleTarget? = null
     private var headerHeightPx = 0
+    private var activeProfilePopup: android.widget.ListPopupWindow? = null
+    private var lastProfileDismissTime: Long = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -526,13 +528,27 @@ class MainActivity : AppCompatActivity() {
     }
 
     // Метод показа Popup
+
     private fun showProfilePopup(anchor: View, count: Int) {
+        // 1. ПРОВЕРКА НА НЕДАВНЕЕ ЗАКРЫТИЕ (защита от повторного открытия при клике)
+        // Если список закрылся менее 300мс назад, значит пользователь нажал на кнопку,
+        // чтобы закрыть его. Игнорируем этот клик.
+        if (System.currentTimeMillis() - lastProfileDismissTime < 300) {
+            return
+        }
+
+        // 2. Если вдруг он все еще считается открытым в системе
+        if (activeProfilePopup != null && activeProfilePopup!!.isShowing) {
+            activeProfilePopup!!.dismiss()
+            return
+        }
+
         val listPopupWindow = android.widget.ListPopupWindow(this)
         listPopupWindow.anchorView = anchor
+        activeProfilePopup = listPopupWindow
 
         val profiles = mutableListOf<Pair<String, String>>()
         for (i in 0 until count) {
-            // Имя достаем здесь, чтобы показать ТОЛЬКО в списке
             val name = ApiSettings.getProfileTargetName(this, i) ?: "(Пусто)"
             profiles.add("Профиль ${i + 1}" to name)
         }
@@ -552,7 +568,6 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     title.setTextColor(Color.WHITE)
                 }
-
                 return view
             }
         }
@@ -563,11 +578,15 @@ class MainActivity : AppCompatActivity() {
             if (ApiSettings.getCurrentProfile(this) != position) {
                 ApiSettings.setCurrentProfile(this, position)
                 setupProfileBar()
-
-                // ИСПРАВЛЕНИЕ: Грузим из КЕША (памяти), а не из интернета!
                 viewModel.loadInitialSchedule(keepCurrentPosition = true)
             }
             listPopupWindow.dismiss()
+        }
+
+        // 3. ФИКСАЦИЯ ВРЕМЕНИ ЗАКРЫТИЯ
+        listPopupWindow.setOnDismissListener {
+            activeProfilePopup = null
+            lastProfileDismissTime = System.currentTimeMillis() // <--- ЗАПОМИНАЕМ ВРЕМЯ
         }
 
         listPopupWindow.show()
@@ -876,8 +895,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
         if (ev != null) {
+            // 1. Логика скрытия клавиатуры при открытом Drawer (оставляем как было)
             if (drawerLayout.isDrawerOpen(GravityCompat.END)) {
-                // Если тап мимо клавиатуры - скрыть её
                 if (ev.action == MotionEvent.ACTION_DOWN) {
                     val v = currentFocus
                     if (v is EditText) {
@@ -891,13 +910,21 @@ class MainActivity : AppCompatActivity() {
                 return super.dispatchTouchEvent(ev)
             }
 
-            val isContentArea = ev.y > headerHeightPx
+            // 2. ИСПРАВЛЕННАЯ ЛОГИКА ПЕРЕКЛЮЧЕНИЯ СТРАНИЦ
             val mode = viewModel.navigationMode.value ?: NavigationMode.BOTH
             val isTouchAllowed = (mode == NavigationMode.TOUCH || mode == NavigationMode.BOTH)
 
-            if (isTouchAllowed && isContentArea && ::gestureDetector.isInitialized) {
-                if (gestureDetector.onTouchEvent(ev)) {
-                    return true
+            if (isTouchAllowed && ::gestureDetector.isInitialized) {
+                // Получаем границы ViewPager на экране
+                val viewPagerRect = android.graphics.Rect()
+                viewPager.getGlobalVisibleRect(viewPagerRect)
+
+                // Проверяем, попал ли палец внутрь ViewPager
+                // ViewPager - это область с парами, исключая бары дней и недель
+                if (viewPagerRect.contains(ev.rawX.toInt(), ev.rawY.toInt())) {
+                    if (gestureDetector.onTouchEvent(ev)) {
+                        return true
+                    }
                 }
             }
         }

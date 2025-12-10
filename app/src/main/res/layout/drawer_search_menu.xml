@@ -276,7 +276,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Количество профилей (макс 10):"
+                    android:text="Количество профилей (2-10):"
                     android:textColor="#AAAAAA"
                     android:textSize="12sp"
                     android:layout_marginBottom="8dp"/>

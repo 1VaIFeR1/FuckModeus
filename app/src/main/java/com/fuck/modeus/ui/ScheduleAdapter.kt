@@ -54,6 +54,14 @@ class ScheduleAdapter(
         private val tvRoom: TextView = itemView.findViewById(R.id.tvRoom)
         private val tvType: TextView = itemView.findViewById(R.id.tvType)
 
+        // Переменные для кастомного долгого нажатия
+        private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        private var startX = 0f
+        private var startY = 0f
+        private val longPressTimeout = 600L // Увеличили время (было ~400-500 системное)
+        private val touchSlop = 50f // Допуск на дрожание пальца
+
+        @android.annotation.SuppressLint("ClickableViewAccessibility")
         fun bind(item: ScheduleItem) {
             tvSubject.text = item.subject
             if (!item.moduleShortName.isNullOrBlank()) {
@@ -74,10 +82,37 @@ class ScheduleAdapter(
             }
             tvType.text = typeText
 
-            // Устанавливаем слушатель долгого нажатия
-            itemView.setOnLongClickListener {
+            // Реализация кастомного Long Click через TouchListener
+            val longPressRunnable = Runnable {
                 onLongClick(item)
-                true // true означает, что событие поглощено
+                itemView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                // Отменяем обработку касания, чтобы не сработал onClick (если он есть)
+                itemView.parent.requestDisallowInterceptTouchEvent(true)
+            }
+
+            itemView.setOnTouchListener { v, event ->
+                when (event.action) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        startX = event.x
+                        startY = event.y
+                        handler.postDelayed(longPressRunnable, longPressTimeout)
+                        // Возвращаем true, чтобы ловить MOVE и UP,
+                        // но это может блокировать обычный клик, если он нужен.
+                        // В данном случае у нас нет onClick, поэтому true безопасно.
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_MOVE -> {
+                        if (Math.abs(event.x - startX) > touchSlop || Math.abs(event.y - startY) > touchSlop) {
+                            handler.removeCallbacks(longPressRunnable)
+                        }
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                        handler.removeCallbacks(longPressRunnable)
+                        true
+                    }
+                    else -> false
+                }
             }
         }
     }
