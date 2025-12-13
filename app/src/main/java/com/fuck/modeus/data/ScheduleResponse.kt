@@ -39,7 +39,7 @@ data class Link(val href: String)
 // Справочники
 data class Person(val id: String, val fullName: String)
 data class Room(val id: String, val name: String)
-data class CourseUnit(val id: String, val name: String, val nameShort: String?)
+data class CourseUnit(val id: String, val name: String, val nameShort: String?, val prototypeId: String?)
 data class CycleRealization(val id: String, val code: String?)
 
 // Связки
@@ -74,7 +74,8 @@ data class ScheduleItem(
     val groupCode: String?,
     val teamSize: Int?,
     val locationType: String,
-    val courseUnitId: String?
+    val courseUnitId: String?,
+    val coursePrototypeId: String?
 )
 
 data class CachedData(

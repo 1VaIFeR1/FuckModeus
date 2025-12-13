@@ -716,7 +716,8 @@ class MainActivity : AppCompatActivity() {
         if (canShowGrades) {
             btnGrades.visibility = View.VISIBLE
             btnGrades.setOnClickListener {
-                viewModel.loadGrades(item.courseUnitId!!) // !! безопасно, т.к. проверили выше
+                // Передаем теперь два параметра!
+                viewModel.loadGrades(item.courseUnitId!!, item.coursePrototypeId)
                 Toast.makeText(this, "Загрузка баллов...", Toast.LENGTH_SHORT).show()
             }
         } else {
@@ -790,8 +791,8 @@ class MainActivity : AppCompatActivity() {
         }
         viewModel.gradeData.observe(this) { data ->
             if (data != null) {
-                val (totalScore, list) = data
-                showGradesDialog(totalScore, list)
+                val (totalScore, list, controlType) = data // Распаковываем Triple
+                showGradesDialog(totalScore, list, controlType)
                 viewModel.clearGradeResult()
             }
         }
@@ -871,22 +872,28 @@ class MainActivity : AppCompatActivity() {
             e.printStackTrace()
         }
     }
-    private fun showGradesDialog(totalScore: String, items: List<GradeUiItem>) {
+    private fun showGradesDialog(totalScore: String, items: List<GradeUiItem>, controlType: String?) {
         val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_grades, null)
-        val dialog = AlertDialog.Builder(this)
-            .setView(dialogView)
-            .create()
-
+        val dialog = AlertDialog.Builder(this).setView(dialogView).create()
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
 
         val tvTotal = dialogView.findViewById<TextView>(R.id.tvGradeTotal)
         val tvSubject = dialogView.findViewById<TextView>(R.id.tvGradeSubject)
+        val tvControl = dialogView.findViewById<TextView>(R.id.tvGradeControl) // <--- НОВОЕ
         val tvDisclaimer = dialogView.findViewById<TextView>(R.id.tvGradeDisclaimer)
         val rv = dialogView.findViewById<RecyclerView>(R.id.rvGrades)
         val btnClose = dialogView.findViewById<View>(R.id.btnCloseGrades)
 
         tvSubject.text = "Текущая успеваемость"
         tvTotal.text = "$totalScore баллов"
+
+        // Отображение типа контроля
+        if (!controlType.isNullOrBlank()) {
+            tvControl.text = controlType
+            tvControl.visibility = View.VISIBLE
+        } else {
+            tvControl.visibility = View.GONE
+        }
 
         val scoreVal = totalScore.toDoubleOrNull() ?: 0.0
 

@@ -50,4 +50,9 @@ interface ApiService {
     // НОВЫЙ МЕТОД: Получение баллов
     @POST("students-app/api/pages/student-card/my/academic-period-results-table/secondary")
     suspend fun getGrades(@Body body: JsonObject): com.fuck.modeus.data.GradeResponse
+    // Получение технологии (чтобы узнать тип сдачи: Экзамен/Зачет)
+    @retrofit2.http.GET("courses/api/course-units/{id}/lessons-technology")
+    suspend fun getCourseTechnology(
+        @retrofit2.http.Path("id") prototypeId: String
+    ): com.fuck.modeus.data.TechnologyResponse
 }

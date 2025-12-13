@@ -16,7 +16,18 @@
         android:textStyle="bold"
         android:textColor="@android:color/white"
         android:gravity="center_horizontal"
-        android:layout_marginBottom="8dp"/>
+        android:layout_marginBottom="4dp"/>
+    <!-- НОВОЕ: Тип контроля (Экзамен/Зачет) -->
+    <TextView
+        android:id="@+id/tvGradeControl"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Экзамен"
+        android:textSize="14sp"
+        android:textColor="#FFC107"
+        android:gravity="center_horizontal"
+        android:layout_marginBottom="12dp"
+        android:visibility="gone"/> <!-- По умолчанию скрыто -->
 
     <!-- Итоговый балл -->
     <TextView
