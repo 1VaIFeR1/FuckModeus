@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:background="#414141">
+
+    <!-- Заголовок -->
+    <TextView
+        android:id="@+id/tvGradeSubject"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Название предмета"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:textColor="@android:color/white"
+        android:gravity="center_horizontal"
+        android:layout_marginBottom="8dp"/>
+
+    <!-- Итоговый балл -->
+    <TextView
+        android:id="@+id/tvGradeTotal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="0.00"
+        android:textSize="28sp"
+        android:textStyle="bold"
+        android:textColor="#4CAF50"
+        android:gravity="center_horizontal"/>
+
+    <!-- ДИСКЛЕЙМЕР (Сразу под баллами) -->
+    <TextView
+        android:id="@+id/tvGradeDisclaimer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="16dp"
+        android:gravity="center"
+        android:text="Текст дисклеймера"
+        android:textSize="11sp"
+        android:lineSpacingExtra="2dp"
+        android:textColor="#B0B0B0"/>
+
+    <!-- Разделитель -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#666666"
+        android:layout_marginBottom="8dp"/>
+
+    <!-- Список заданий -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvGrades"
+        android:layout_width="match_parent"
+        android:layout_height="300dp"
+        android:scrollbars="vertical" />
+
+    <Button
+        android:id="@+id/btnCloseGrades"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Закрыть"
+        android:layout_marginTop="8dp"
+        android:backgroundTint="#555555"
+        android:textColor="@android:color/white"/>
+
+</LinearLayout>

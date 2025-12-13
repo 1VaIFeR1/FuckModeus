@@ -65,6 +65,16 @@
             android:backgroundTint="?attr/colorPrimary"
             android:layout_marginTop="16dp"
             style="@style/Widget.MaterialComponents.Button"/>
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnShowGrades"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🎓 Узнать баллы"
+            android:textColor="@android:color/white"
+            android:backgroundTint="#4CAF50"
+            android:layout_marginTop="8dp"
+            android:visibility="gone"
+            style="@style/Widget.MaterialComponents.Button"/>
 
     </LinearLayout>
 </ScrollView>

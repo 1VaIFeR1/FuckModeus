@@ -87,6 +87,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val attendeesList: LiveData<List<Attendee>> = _attendeesList
     private val _attendeesLoading = MutableLiveData<Boolean>()
     val attendeesLoading: LiveData<Boolean> = _attendeesLoading
+    private val _gradeResult = MutableLiveData<String?>()
+    private val _gradeData = MutableLiveData<Pair<String, List<GradeUiItem>>?>()
+    val gradeData: LiveData<Pair<String, List<GradeUiItem>>?> = _gradeData
+
+    private val _gradesLoading = MutableLiveData<Boolean>()
+    val gradesLoading: LiveData<Boolean> = _gradesLoading
+
+    // Запоминаем ID текущего человека, чье расписание смотрим
+    var currentTargetId: String? = null
+        private set
 
     // --- Файлы ---
     private val dbFileName = "allid_v2.json"
@@ -345,6 +355,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // =================================================================================
 
     fun loadSchedule(targetId: String) {
+        currentTargetId = targetId
         _isRefreshing.postValue(true)
 
         val apiSource = ApiSettings.getApiSource(getApplication())
@@ -570,7 +581,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val cal = Calendar.getInstance(); cal.timeInMillis = time; toStartOfDay(cal); return cal.timeInMillis
     }
     private fun createEmptyLesson(startTime: String, endTime: String, pairName: String): ScheduleItem {
-        return ScheduleItem(UUID.randomUUID().toString(), 0L, "Нет пары", pairName, startTime, endTime, "", "", "", "", null, null, null, "")
+        return ScheduleItem(UUID.randomUUID().toString(), 0L, "Нет пары", pairName, startTime, endTime, "", "", "", "", null, null, null, "", null)
     }
 
     fun refreshSchedule() {
@@ -628,6 +639,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val cachedData = Gson().fromJson(jsonString, CachedData::class.java)
                 val scheduleResponse = Gson().fromJson(cachedData.scheduleJsonResponse, ScheduleResponse::class.java)
                 val items = parseResponseV2(scheduleResponse).sortedBy { it.fullStartDate }
+                currentTargetId = cachedData.targetId
 
                 _scheduleTitle.postValue(cachedData.targetName)
                 _lastUpdateTime.postValue("Последнее обновление: ${cachedData.lastUpdateTime}")
@@ -715,6 +727,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             val courseRef = event.links.courseUnit?.href
+            val courseUnitId = courseRef?.substringAfterLast("/")
             val moduleShort = coursesMap[courseRef]?.nameShort
             val moduleFull = coursesMap[courseRef]?.name
             val cycleRef = event.links.cycleRealization?.href
@@ -725,7 +738,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val endDate = inputFormat.parse(event.end)
                 if (startDate != null && endDate != null) {
                     val humanType = EventTypeMapper.getHumanReadableType(event.typeId)
-                    scheduleItems.add(ScheduleItem(event.id, startDate.time, event.name, moduleShort, timeFormat.format(startDate), timeFormat.format(endDate), dateFormat.format(startDate), teacherStr, roomStr, humanType, moduleFull, groupCode, teamSize, locationType))
+                    scheduleItems.add(ScheduleItem(event.id, startDate.time, event.name, moduleShort, timeFormat.format(startDate), timeFormat.format(endDate), dateFormat.format(startDate), teacherStr, roomStr, humanType, moduleFull, groupCode, teamSize, locationType, courseUnitId))
                 }
             } catch (e: Exception) { }
         }
@@ -772,5 +785,77 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _showEmptyLessons.value = shouldShow
         sharedPreferences.edit().putBoolean("show_empty_lessons", shouldShow).apply()
         processRawSchedule(fullRawSchedule)
+    }
+    fun loadGrades(courseUnitId: String) {
+        val personId = currentTargetId
+        if (personId == null) {
+            _error.postValue("Ошибка: Не выбран профиль")
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            _gradesLoading.postValue(true)
+            try {
+                val api = RetrofitInstance.getApi(getApplication())
+
+                val body = JsonObject().apply {
+                    val ids = JsonArray()
+                    ids.add(courseUnitId)
+                    add("courseUnitRealizationId", ids)
+                }
+
+                val response = api.getGrades(body)
+
+                // 1. Ищем ИТОГ
+                val summaryObj = response.summaryObjects?.find {
+                    it.typeName.contains("Итог текущ", ignoreCase = true)
+                } ?: response.summaryObjects?.firstOrNull()
+
+                val totalScore = summaryObj?.resultCurrent?.resultValue ?: "0"
+
+                // 2. Собираем список ЗАДАНИЙ
+                val uiList = mutableListOf<GradeUiItem>()
+                response.lessonObjects?.forEach { lesson ->
+                    // Берем только те, где есть хоть какая-то оценка (даже 0)
+                    // Или показываем все? Давай все, кроме null-результатов.
+                    val scoreStr = lesson.result?.resultValue
+                    if (scoreStr != null) {
+                        // Пробуем парсить в число, чтобы понять, ноль это или нет
+                        val scoreDouble = scoreStr.toDoubleOrNull() ?: 0.0
+                        uiList.add(GradeUiItem(
+                            name = lesson.typeName,
+                            score = scoreStr,
+                            isZero = scoreDouble == 0.0
+                        ))
+                    }
+                }
+
+                // Сортируем: сначала те, где есть баллы, потом нули? Или по порядку?
+                // Лучше оставить как сервер прислал, или по имени.
+                // Пусть будет как есть.
+
+                if (uiList.isEmpty() && totalScore == "0") {
+                    _error.postValue("Баллы не найдены")
+                } else {
+                    _gradeData.postValue(Pair(totalScore, uiList))
+                }
+
+            } catch (e: Exception) {
+                if (e is retrofit2.HttpException && e.code() == 401) {
+                    _error.postValue("Ошибка авторизации. Обновите токен!")
+                } else {
+                    Log.e(TAG, "Grades Error", e)
+                    _error.postValue("Не удалось получить баллы")
+                }
+                _gradeData.postValue(null)
+            } finally {
+                _gradesLoading.postValue(false)
+            }
+        }
+    }
+
+    // Метод очистки тоже обнови
+    fun clearGradeResult() {
+        _gradeData.value = null
     }
 }

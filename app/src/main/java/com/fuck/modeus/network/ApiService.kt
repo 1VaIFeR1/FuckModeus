@@ -47,4 +47,7 @@ interface ApiService {
     suspend fun getEventAttendees(
         @retrofit2.http.Path("id") eventId: String
     ): List<Attendee>
+    // НОВЫЙ МЕТОД: Получение баллов
+    @POST("students-app/api/pages/student-card/my/academic-period-results-table/secondary")
+    suspend fun getGrades(@Body body: JsonObject): com.fuck.modeus.data.GradeResponse
 }

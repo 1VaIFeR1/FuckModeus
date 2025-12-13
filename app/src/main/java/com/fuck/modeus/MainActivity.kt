@@ -47,6 +47,7 @@ import com.fuck.modeus.data.ScheduleTarget
 import com.google.android.material.navigation.NavigationView
 import com.google.android.material.switchmaterial.SwitchMaterial
 import java.text.SimpleDateFormat
+import com.fuck.modeus.data.GradeUiItem
 import java.util.*
 
 class MainActivity : AppCompatActivity() {
@@ -695,7 +696,32 @@ class MainActivity : AppCompatActivity() {
         } else {
             btnAttendees.visibility = View.GONE
         }
+        val btnGrades = dialogView.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnShowGrades)
+        val apiSource = ApiSettings.getApiSource(this)
 
+        // 1. Кто залогинен? (ID из токена)
+        val myPersonId = com.fuck.modeus.data.TokenManager.getPersonIdFromToken(this)
+
+        // 2. Кого смотрим? (ID текущего расписания)
+        val targetId = viewModel.currentTargetId
+
+        // 3. Проверка: Это SFEDU? Предмет имеет ID? Мы смотрим СЕБЯ?
+        // (myPersonId == targetId) гарантирует, что мы не увидим свои оценки у друга
+        val canShowGrades = apiSource == ApiSource.SFEDU
+                && item.courseUnitId != null
+                && myPersonId != null
+                && targetId != null
+                && myPersonId == targetId
+
+        if (canShowGrades) {
+            btnGrades.visibility = View.VISIBLE
+            btnGrades.setOnClickListener {
+                viewModel.loadGrades(item.courseUnitId!!) // !! безопасно, т.к. проверили выше
+                Toast.makeText(this, "Загрузка баллов...", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            btnGrades.visibility = View.GONE
+        }
         dialog.show()
     }
 
@@ -761,6 +787,13 @@ class MainActivity : AppCompatActivity() {
             viewPager.isUserInputEnabled = swipeEnabled
 
             if (!::gestureDetector.isInitialized) initGestureDetector()
+        }
+        viewModel.gradeData.observe(this) { data ->
+            if (data != null) {
+                val (totalScore, list) = data
+                showGradesDialog(totalScore, list)
+                viewModel.clearGradeResult()
+            }
         }
     }
 
@@ -838,7 +871,52 @@ class MainActivity : AppCompatActivity() {
             e.printStackTrace()
         }
     }
+    private fun showGradesDialog(totalScore: String, items: List<GradeUiItem>) {
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_grades, null)
+        val dialog = AlertDialog.Builder(this)
+            .setView(dialogView)
+            .create()
 
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+
+        val tvTotal = dialogView.findViewById<TextView>(R.id.tvGradeTotal)
+        val tvSubject = dialogView.findViewById<TextView>(R.id.tvGradeSubject)
+        val tvDisclaimer = dialogView.findViewById<TextView>(R.id.tvGradeDisclaimer)
+        val rv = dialogView.findViewById<RecyclerView>(R.id.rvGrades)
+        val btnClose = dialogView.findViewById<View>(R.id.btnCloseGrades)
+
+        tvSubject.text = "Текущая успеваемость"
+        tvTotal.text = "$totalScore баллов"
+
+        val scoreVal = totalScore.toDoubleOrNull() ?: 0.0
+
+        // ЛОГИКА ДИСКЛЕЙМЕРА И ЦВЕТОВ
+        if (scoreVal == 0.0) {
+            // Красный цвет для нуля
+            tvTotal.setTextColor(Color.parseColor("#EF5350"))
+            tvDisclaimer.setTextColor(Color.parseColor("#EF5350"))
+            tvDisclaimer.text = "Внимание: 0 баллов не всегда означает отсутствие работ. Это значит лишь то, что баллы не были занесены непосредственно в базу Sfedu Modeus."
+        } else {
+            // Зеленый (или желтый если мало) для нормальных баллов
+            if (scoreVal < 60) {
+                tvTotal.setTextColor(Color.parseColor("#FFC107")) // Желтый/Оранжевый
+            } else {
+                tvTotal.setTextColor(Color.parseColor("#4CAF50")) // Зеленый
+            }
+            // Нейтральный серый текст
+            tvDisclaimer.setTextColor(Color.parseColor("#B0B0B0"))
+            tvDisclaimer.text = "Возможно, у вас больше баллов, просто они не занесены в систему Sfedu Modeus."
+        }
+
+        rv.layoutManager = LinearLayoutManager(this)
+        val adapter = GradesAdapter()
+        rv.adapter = adapter
+        adapter.submitList(items)
+
+        btnClose.setOnClickListener { dialog.dismiss() }
+
+        dialog.show()
+    }
     private fun hideKeyboard() {
         val view = this.currentFocus
         if (view != null) {

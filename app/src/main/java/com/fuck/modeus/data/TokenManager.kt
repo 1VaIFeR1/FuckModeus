@@ -2,7 +2,10 @@ package com.fuck.modeus.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Base64
 import android.util.Log
+import org.json.JSONObject
+
 
 object TokenManager {
     private const val PREFS_NAME = "modeus_auth_prefs"
@@ -32,5 +35,30 @@ object TokenManager {
     fun clearToken(context: Context) {
         Log.d(TAG, "TokenManager: Удаление токена")
         getPrefs(context).edit().remove(KEY_TOKEN).apply()
+    }
+    // --- НОВЫЙ МЕТОД ---
+    fun getPersonIdFromToken(context: Context): String? {
+        val token = getToken(context) ?: return null
+        try {
+            // JWT состоит из 3 частей: Header.Payload.Signature
+            val parts = token.split(".")
+            if (parts.size < 2) return null
+
+            val payload = parts[1]
+            // Декодируем Base64
+            val decodedBytes = Base64.decode(payload, Base64.URL_SAFE)
+            val decodedString = String(decodedBytes, Charsets.UTF_8)
+
+            // Парсим JSON
+            val json = JSONObject(decodedString)
+            return if (json.has("person_id")) {
+                json.getString("person_id")
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Ошибка декодирования токена: ${e.message}")
+            return null
+        }
     }
 }

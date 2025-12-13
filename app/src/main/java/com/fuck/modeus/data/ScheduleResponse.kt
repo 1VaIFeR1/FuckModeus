@@ -73,7 +73,8 @@ data class ScheduleItem(
     val moduleFullName: String?,
     val groupCode: String?,
     val teamSize: Int?,
-    val locationType: String
+    val locationType: String,
+    val courseUnitId: String?
 )
 
 data class CachedData(
