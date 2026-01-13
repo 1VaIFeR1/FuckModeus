@@ -1,0 +1,292 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/bg_dialog_rounded"
+    android:padding="16dp">
+
+    <!-- Заголовок -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Справка и возможности"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:textColor="@android:color/white"
+        android:gravity="center"
+        android:layout_marginBottom="16dp"/>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingBottom="24dp">
+
+            <!-- ВСТУПЛЕНИЕ -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Добро пожаловать в FuckModeus! Это приложение делает работу с расписанием ЮФУ удобной, быстрой и безболезненной."
+                android:textColor="#DDDDDD"
+                android:textSize="14sp"
+                android:layout_marginBottom="12dp"/>
+
+            <!-- БАЗА ДАННЫХ -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="⚠️ ВАЖНО: База данных"
+                android:textStyle="bold"
+                android:textColor="#FF5252"
+                android:textSize="16sp"
+                android:layout_marginBottom="4dp"/>
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="При первом запуске используется встроенная (старая) база ID. Если вы читаете это после сентября 2026 года — данные могут устареть.\n\nРекомендуем сразу обновить базу: Меню -> Настройки -> Дополнительные опции -> Обновить базу (ID)."
+                android:textColor="#DDDDDD"
+                android:layout_marginBottom="8dp"/>
+            <!-- СКРИНШОТ КНОПКИ ОБНОВЛЕНИЯ -->
+
+
+
+            <!-- 1. ПОИСК -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="1. Поиск и Навигация"
+                android:textStyle="bold"
+                android:textColor="#FFC107"
+                android:textSize="18sp"
+                android:layout_marginBottom="8dp"/>
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Ищите преподавателей, группы или аудитории. Используйте 'Закрепить' (звездочка), чтобы добавить их в быстрый доступ."
+                android:textColor="#DDDDDD"
+                android:layout_marginBottom="8dp"/>
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:adjustViewBounds="true"
+                android:maxHeight="600dp"
+                android:src="@drawable/poisinavig"
+                android:scaleType="fitCenter"
+                android:layout_marginBottom="24dp"/>
+
+
+            <!-- 2. ИСТОЧНИКИ -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="2. Источники данных"
+                android:textStyle="bold"
+                android:textColor="#FFC107"
+                android:textSize="18sp"
+                android:layout_marginBottom="8dp"/>
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="• SFEDU Modeus: Основной режим. Требует входа через Microsoft. Показывает баллы, участников и полные данные.\n• ИКТИБ (Legacy): Работает без авторизации через старый API. Полезно, если Модеус лежит."
+                android:textColor="#DDDDDD"
+                android:layout_marginBottom="8dp"/>
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="100dp"
+                android:src="@drawable/istochniki"
+                android:scaleType="fitCenter"
+                android:layout_marginBottom="24dp"/>
+
+
+            <!-- 3. НАСТРОЙКИ UI -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="3. Настройки интерфейса"
+                android:textStyle="bold"
+                android:textColor="#FFC107"
+                android:textSize="18sp"
+                android:layout_marginBottom="8dp"/>
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Вы можете скрыть пустые пары и настроить навигацию (Свайпы или Касания по краям экрана)."
+                android:textColor="#DDDDDD"
+                android:layout_marginBottom="24dp"/>
+
+
+            <!-- 4. ДОПОЛНИТЕЛЬНЫЕ ОПЦИИ -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="4. Дополнительные опции"
+                android:textStyle="bold"
+                android:textColor="#FFC107"
+                android:textSize="18sp"
+                android:layout_marginBottom="8dp"/>
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Внизу настроек есть скрываемое меню. Там можно:\n• Обновить базу ID (скачать список новых первокурсников и преподов).\n• Экспортировать базу в файл.\n• Вызвать эту справку повторно."
+                android:textColor="#DDDDDD"
+                android:layout_marginBottom="8dp"/>
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="150dp"
+                android:src="@drawable/dopopcii"
+                android:scaleType="fitCenter"
+                android:layout_marginBottom="24dp"/>
+
+
+            <!-- 5. МУЛЬТИПРОФИЛЬ -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="5. Мультипрофиль"
+                android:textStyle="bold"
+                android:textColor="#FFC107"
+                android:textSize="18sp"
+                android:layout_marginBottom="8dp"/>
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Следите за расписанием друзей или преподавателей параллельно. До 10 профилей.\n\nМожно выбрать вид переключения 'Кнопки' (удобно для 2-3 профилей):"
+                android:textColor="#DDDDDD"
+                android:layout_marginBottom="8dp"/>
+
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:adjustViewBounds="true"
+                android:maxHeight="200dp"
+                android:src="@drawable/multiknopki"
+                android:scaleType="fitCenter"
+                android:layout_marginBottom="16dp"/>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Или вид 'Список' (если профилей много):"
+                android:textColor="#DDDDDD"
+                android:layout_marginBottom="8dp"/>
+
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:adjustViewBounds="true"
+                android:maxHeight="200dp"
+                android:src="@drawable/multispisok"
+                android:scaleType="fitCenter"
+                android:layout_marginBottom="32dp"/>
+
+
+            <!-- 6. ДЕТАЛИ ПАРЫ -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="6. Детали занятия"
+                android:textStyle="bold"
+                android:textColor="#FFC107"
+                android:textSize="18sp"
+                android:layout_marginBottom="8dp"/>
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Зажмите на паре, чтобы увидеть подробности.\n\n💡 Лайфхак: Нажмите на имя преподавателя, чтобы найти его расписание. ЗАЖМИТЕ имя, чтобы найти информацию о нем в Google."
+                android:textColor="#DDDDDD"
+                android:layout_marginBottom="8dp"/>
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="250dp"
+                android:src="@drawable/dopinfa"
+                android:scaleType="fitCenter"
+                android:layout_marginBottom="24dp"/>
+
+
+            <!-- 7. БАЛЛЫ И УЧАСТНИКИ -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="7. Участники и Баллы"
+                android:textStyle="bold"
+                android:textColor="#FFC107"
+                android:textSize="18sp"
+                android:layout_marginBottom="8dp"/>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="👥 Кнопка 'Участники' показывает список участников занятия:"
+                android:textColor="#DDDDDD"
+                android:layout_marginBottom="8dp"/>
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:adjustViewBounds="true"
+                android:maxHeight="400dp"
+                android:src="@drawable/uchasniki"
+                android:scaleType="fitCenter"
+                android:layout_marginBottom="16dp"/>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="🎓 Кнопка 'Узнать баллы' показывает текущие оценки по выбранному предмету. Работает только в ВАШЕМ профиле:"
+                android:textColor="#DDDDDD"
+                android:layout_marginBottom="8dp"/>
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:adjustViewBounds="true"
+                android:maxHeight="400dp"
+                android:src="@drawable/ballii"
+                android:scaleType="fitCenter"
+                android:layout_marginBottom="32dp"/>
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Обе кнопки видны лишь, если в качестве источника данных выбран Sfedu Modeus."
+                android:textColor="#DDDDDD"
+                android:layout_marginBottom="8dp"/>
+
+
+            <!-- 8. ЗАЧЕТКА -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="8. Моя Зачётка"
+                android:textStyle="bold"
+                android:textColor="#FFC107"
+                android:textSize="18sp"
+                android:layout_marginBottom="8dp"/>
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="В боковом меню доступна 'Моя зачётка'. Это сводка успеваемости по всем предметам. Раскройте предмет, чтобы увидеть, за что именно начислены баллы."
+                android:textColor="#DDDDDD"
+                android:layout_marginBottom="8dp"/>
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="250dp"
+                android:src="@drawable/zachetka"
+                android:scaleType="fitCenter"
+                android:layout_marginBottom="24dp"/>
+
+        </LinearLayout>
+    </ScrollView>
+
+    <Button
+        android:id="@+id/btnCloseHelp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Понятно, закрыть"
+        android:backgroundTint="?attr/colorPrimary"
+        android:textColor="@android:color/white"/>
+
+</LinearLayout>

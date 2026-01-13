@@ -24,6 +24,7 @@ object ApiSettings {
     private const val KEY_PROFILE_DISPLAY_MODE = "profile_display_mode"
     private const val KEY_PROFILE_NAME_PREFIX = "profile_name_"
     private const val KEY_PROFILE_MAX_DATE_PREFIX = "profile_max_date_"
+    private const val KEY_FIRST_RUN = "is_first_run_v3_2"
 
     // ... (Существующие методы getApiSource, setApiSource, getRd... setRd... оставляем) ...
     // Вставь их сюда, если копируешь, или просто добавь новые методы ниже:
@@ -97,5 +98,15 @@ object ApiSettings {
             }
         }
         return globalMax
+    }
+
+    fun isFirstRun(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_FIRST_RUN, true)
+    }
+
+    fun setFirstRunCompleted(context: Context) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_FIRST_RUN, false).apply()
     }
 }

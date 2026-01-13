@@ -458,6 +458,18 @@
                         android:layout_marginBottom="8dp"/>
 
                     <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnShowHelp"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Справка / Обучение"
+                        android:textColor="@android:color/white"
+                        android:backgroundTint="#424242"
+                        app:icon="@android:drawable/ic_menu_help"
+                        app:iconTint="@android:color/white"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:layout_marginBottom="8dp"/>
+
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnCorruptToken"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"

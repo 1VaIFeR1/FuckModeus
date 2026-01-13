@@ -124,6 +124,13 @@ class MainActivity : AppCompatActivity() {
                 viewModel.loadInitialSchedule(keepCurrentPosition = savedInstanceState != null)
             }
         }
+        if (ApiSettings.isFirstRun(this)) {
+            // Показываем с небольшой задержкой, чтобы интерфейс прогрузился
+            viewPager.postDelayed({
+                HelpDialogFragment().show(supportFragmentManager, "HelpDialog")
+                ApiSettings.setFirstRunCompleted(this)
+            }, 1000)
+        }
     }
 
     private fun hideSystemUI() {
@@ -309,6 +316,7 @@ class MainActivity : AppCompatActivity() {
         val rbDropdown = navigationView.findViewById<RadioButton>(R.id.rbModeDropdown)
         val btnCorruptToken = navigationView.findViewById<View>(R.id.btnCorruptToken)
         val btnGradebook = navigationView.findViewById<View>(R.id.btnGlobalGradebook)
+        val btnShowHelp = navigationView.findViewById<View>(R.id.btnShowHelp)
 
         if (ApiSettings.getProfileDisplayMode(this) == com.fuck.modeus.data.ProfileDisplayMode.BAR) {
             rbBar.isChecked = true
@@ -317,6 +325,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Слушатели
+        btnShowHelp.setOnClickListener {
+            HelpDialogFragment().show(supportFragmentManager, "HelpDialog")
+            drawerLayout.closeDrawer(GravityCompat.END)
+        }
+
         rbBar.setOnClickListener {
             ApiSettings.setProfileDisplayMode(this, com.fuck.modeus.data.ProfileDisplayMode.BAR)
             setupProfileBar() // Перерисовываем на главном экране
