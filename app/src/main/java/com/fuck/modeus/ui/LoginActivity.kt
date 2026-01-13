@@ -19,6 +19,8 @@ class LoginActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private var targetId: String? = null
     private val TAG = "FuckModeus_DEBUG"
+    private var pendingCourseId: String? = null
+    private var pendingProtoId: String? = null
 
     // Флаг, чтобы не сохранять токен 100 раз подряд и остановить сканер
     private var isTokenCaptured = false
@@ -28,6 +30,9 @@ class LoginActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         targetId = intent.getStringExtra("TARGET_ID")
+
+        pendingCourseId = intent.getStringExtra("PENDING_COURSE_ID")
+        pendingProtoId = intent.getStringExtra("PENDING_PROTO_ID")
 
         // Сбрасываем флаг при новом создании
         isTokenCaptured = false
@@ -191,6 +196,12 @@ class LoginActivity : AppCompatActivity() {
 
         targetId?.let {
             intent.putExtra("RESTART_WITH_ID", it)
+        }
+
+        pendingCourseId?.let {
+            intent.putExtra("PENDING_COURSE_ID", it)
+            // prototypeId может быть null, передаем только если есть курс
+            intent.putExtra("PENDING_PROTO_ID", pendingProtoId)
         }
 
         startActivity(intent)

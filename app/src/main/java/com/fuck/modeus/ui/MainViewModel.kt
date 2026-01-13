@@ -23,6 +23,8 @@ import java.io.File
 import java.io.InputStreamReader
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 
 enum class NavigationMode { SWIPE, TOUCH, BOTH }
 
@@ -93,6 +95,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _gradesLoading = MutableLiveData<Boolean>()
     val gradesLoading: LiveData<Boolean> = _gradesLoading
+
+    val authRequired = MutableLiveData<Pair<String, String?>>()
+
+    private val _gradebookData = MutableLiveData<List<GradebookEntry>>()
+    val gradebookData: LiveData<List<GradebookEntry>> = _gradebookData
 
     // Запоминаем ID текущего человека, чье расписание смотрим
     var currentTargetId: String? = null
@@ -406,6 +413,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val scheduleItems = parseResponseV2(scheduleResponse)
                     val sortedItems = scheduleItems.sortedBy { it.fullStartDate }
 
+                    updateProfileMaxDateInSettings(sortedItems)
+
                     // Определяем имя (ФИО препода или номер аудитории)
                     val targetName = target?.name ?: "Расписание"
                     val currentTime = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.getDefault()).format(Date())
@@ -469,9 +478,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun generateWeeks(items: List<ScheduleItem>) {
         val weekList = mutableListOf<WeekItem>()
-        if (items.isEmpty()) {
+
+        // 1. ЛОГИКА ОПРЕДЕЛЕНИЯ КОНЦА СЕМЕСТРА
+        // Мы берем максимальную дату из трех источников:
+        // А) Последняя пара в ТЕКУЩЕМ списке
+        // Б) Последняя пара в ДРУГИХ профилях (сохраненная в настройках)
+        // В) Сегодняшний день (чтобы не показывать меньше, чем уже прожито)
+
+        val context = getApplication<Application>()
+        val globalMaxDate = ApiSettings.getGlobalMaxDate(context)
+        val currentMaxDate = if (items.isNotEmpty()) items.maxOf { it.fullStartDate } else 0L
+        val todayTime = System.currentTimeMillis()
+
+        // Выбираем самую дальнюю дату
+        // kotlin.math.maxOf требует import, либо используем цепочку max
+        val targetMaxTime = kotlin.math.max(globalMaxDate, kotlin.math.max(currentMaxDate, todayTime))
+
+        // Если данных вообще нет нигде (первый запуск) - показываем 1 неделю
+        if (targetMaxTime == 0L) {
             val start = semesterStartDate
             val cal = Calendar.getInstance().apply { time = start }
+            // Ищем понедельник
             while (cal.get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) cal.add(Calendar.DAY_OF_MONTH, -1)
             val monday = cal.time
             cal.add(Calendar.DAY_OF_MONTH, 6)
@@ -481,32 +508,68 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _weeks.postValue(weekList)
             return
         }
-        val maxTime = items.maxOf { it.fullStartDate }
-        val limitCal = Calendar.getInstance().apply { timeInMillis = maxTime }
-        while (limitCal.get(Calendar.DAY_OF_WEEK) != Calendar.SUNDAY) limitCal.add(Calendar.DAY_OF_MONTH, 1)
-        limitCal.set(Calendar.HOUR_OF_DAY, 23); limitCal.set(Calendar.MINUTE, 59); limitCal.set(Calendar.SECOND, 59)
-        val hardLimit = limitCal.time
-        val weekCalendar = Calendar.getInstance().apply {
-            time = semesterStartDate; set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+
+        // 2. Устанавливаем границу генерации
+        val limitCal = Calendar.getInstance().apply { timeInMillis = targetMaxTime }
+
+        // Докручиваем до конца недели (Воскресенье 23:59), чтобы неделя не обрывалась
+        while (limitCal.get(Calendar.DAY_OF_WEEK) != Calendar.SUNDAY) {
+            limitCal.add(Calendar.DAY_OF_MONTH, 1)
         }
+        limitCal.set(Calendar.HOUR_OF_DAY, 23)
+        limitCal.set(Calendar.MINUTE, 59)
+        limitCal.set(Calendar.SECOND, 59)
+        val hardLimit = limitCal.time
+
+        // 3. Цикл генерации недель (от начала семестра до hardLimit)
+        val weekCalendar = Calendar.getInstance().apply {
+            time = semesterStartDate
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }
+
         var weekNumber = 1
         val dateFormat = SimpleDateFormat("dd", Locale("ru"))
         val today = Calendar.getInstance().time
-        while (weekCalendar.time.before(hardLimit) || weekCalendar.time.time == hardLimit.time) {
+
+        // Генерируем, пока не дойдем до лимита
+        while (weekCalendar.time.before(hardLimit) || weekCalendar.time.time <= hardLimit.time) {
+            // Находим понедельник текущей недели
             weekCalendar.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
             val startDate = weekCalendar.time
+
+            // Находим воскресенье
             weekCalendar.set(Calendar.DAY_OF_WEEK, Calendar.SUNDAY)
+            // Фикс для перехода через год/месяц (стандартный календарь иногда тупит с днями недели)
             if (startDate.after(weekCalendar.time)) weekCalendar.add(Calendar.DAY_OF_MONTH, 7)
             val endDate = weekCalendar.time
+
+            // Проверяем, выделена ли неделя (попадает ли сегодня в этот диапазон)
             val isSelected = (today.time >= startDate.time && today.time <= endDate.time)
-            weekList.add(WeekItem(weekNumber, startDate, endDate, "$weekNumber неделя (${dateFormat.format(startDate)}-${dateFormat.format(endDate)})", isSelected))
+
+            weekList.add(WeekItem(
+                weekNumber,
+                startDate,
+                endDate,
+                "$weekNumber неделя (${dateFormat.format(startDate)}-${dateFormat.format(endDate)})",
+                isSelected
+            ))
+
+            // Если эта неделя заканчивается позже или в то же время, что и лимит - выходим
             if (endDate.time >= hardLimit.time) break
+
             weekNumber++
-            weekCalendar.add(Calendar.DAY_OF_MONTH, 1)
+            weekCalendar.add(Calendar.DAY_OF_MONTH, 1) // Переходим на след. день, чтобы цикл переключил неделю
         }
+
+        // 4. Если ни одна неделя не выбрана (сегодняшний день за пределами семестра)
         if (weekList.isNotEmpty() && weekList.none { it.isSelected }) {
-            if (today.after(weekList.last().endDate)) weekList.last().isSelected = true else weekList.first().isSelected = true
+            if (today.after(weekList.last().endDate)) {
+                weekList.last().isSelected = true
+            } else {
+                weekList.first().isSelected = true
+            }
         }
+
         _weeks.postValue(weekList)
     }
 
@@ -640,6 +703,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val scheduleResponse = Gson().fromJson(cachedData.scheduleJsonResponse, ScheduleResponse::class.java)
                 val items = parseResponseV2(scheduleResponse).sortedBy { it.fullStartDate }
                 currentTargetId = cachedData.targetId
+                updateProfileMaxDateInSettings(items)
 
                 _scheduleTitle.postValue(cachedData.targetName)
                 _lastUpdateTime.postValue("Последнее обновление: ${cachedData.lastUpdateTime}")
@@ -846,12 +910,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             } catch (e: Exception) {
                 if (e is retrofit2.HttpException && e.code() == 401) {
-                    _error.postValue("Ошибка авторизации. Обновите токен!")
+                    // Не показываем ошибку, а триггерим событие авторизации
+                    // Сохраняем данные, чтобы повторить запрос после входа
+                    authRequired.postValue(Pair(courseUnitId, prototypeId))
                 } else {
                     Log.e(TAG, "Grades Error", e)
                     _error.postValue("Не удалось получить баллы")
+                    _gradeData.postValue(null)
                 }
-                _gradeData.postValue(null)
             } finally {
                 _gradesLoading.postValue(false)
             }
@@ -861,5 +927,115 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Метод очистки тоже обнови
     fun clearGradeResult() {
         _gradeData.value = null
+    }
+
+    fun loadGlobalGradebook() {
+        val personId = currentTargetId ?: return
+
+        // 1. Собираем уникальные предметы из расписания
+        // Берем fullRawSchedule, фильтруем те, у которых есть courseUnitId
+        val uniqueSubjects = fullRawSchedule
+            .filter { it.courseUnitId != null }
+            .groupBy { it.courseUnitId!! } // Группируем: ID -> Список пар
+            .map { (id, lessons) ->
+                // Пытаемся найти нормальное название модуля (предмета)
+                // Если moduleFullName везде null (редко, но бывает), берем имя первой пары
+                val realName = lessons.firstNotNullOfOrNull { it.moduleFullName }
+                    ?: lessons.first().subject
+
+                realName to id
+            }
+
+        if (uniqueSubjects.isEmpty()) {
+            _error.postValue("В расписании нет предметов для проверки.")
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            _gradesLoading.postValue(true) // Используем тот же лоадер
+            try {
+                val api = RetrofitInstance.getApi(getApplication())
+
+                // 2. Запускаем параллельные запросы (Async)
+                val deferredResults = uniqueSubjects.map { (name, id) ->
+                    async {
+                        try {
+                            val body = JsonObject().apply {
+                                val ids = JsonArray()
+                                ids.add(id)
+                                add("courseUnitRealizationId", ids)
+                            }
+                            val response = api.getGrades(body)
+
+                            // 1. Итог
+                            val summaryObj = response.summaryObjects?.find {
+                                it.typeName.contains("Итог текущ", ignoreCase = true)
+                            } ?: response.summaryObjects?.firstOrNull()
+
+                            val score = summaryObj?.resultCurrent?.resultValue ?: "0"
+
+                            // 2. Детали (парсим список работ)
+                            val detailsList = mutableListOf<GradeUiItem>()
+                            response.lessonObjects?.forEach { lesson ->
+                                val scoreStr = lesson.result?.resultValue
+                                if (scoreStr != null) {
+                                    val scoreDouble = scoreStr.toDoubleOrNull() ?: 0.0
+                                    detailsList.add(GradeUiItem(
+                                        name = lesson.typeName,
+                                        score = scoreStr,
+                                        isZero = scoreDouble == 0.0
+                                    ))
+                                }
+                            }
+
+                            // Возвращаем объект с деталями
+                            GradebookEntry(name, score, detailsList)
+
+                        } catch (e: Exception) {
+                            GradebookEntry(name, "Ошибка", emptyList())
+                        }
+                    }
+                }
+
+                // 3. Ждем выполнения всех запросов
+                val results = deferredResults.awaitAll()
+
+                // 4. Сортируем: сначала с оценками, потом нули
+                val sortedResults = results.sortedByDescending {
+                    it.score.toDoubleOrNull() ?: -1.0
+                }
+
+                _gradebookData.postValue(sortedResults)
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Gradebook Error", e)
+                _error.postValue("Ошибка загрузки зачетки")
+            } finally {
+                _gradesLoading.postValue(false)
+            }
+        }
+    }
+
+    // Очистка после показа
+    fun clearGradebookData() {
+        _gradebookData.value = emptyList() // или null, если поменяешь тип LiveData на nullable
+    }
+
+    private fun updateProfileMaxDateInSettings(items: List<ScheduleItem>) {
+        if (items.isEmpty()) return
+
+        // Находим дату самой последней пары в этом списке
+        val maxTime = items.maxOf { it.fullStartDate }
+
+        // Определяем индекс текущего профиля
+        val context = getApplication<Application>()
+        val currentIndex = if (ApiSettings.isParallelEnabled(context)) {
+            ApiSettings.getCurrentProfile(context)
+        } else {
+            0
+        }
+
+        // Сохраняем в настройки
+        ApiSettings.saveProfileMaxDate(context, currentIndex, maxTime)
     }
 }

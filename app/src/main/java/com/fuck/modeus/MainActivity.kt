@@ -103,10 +103,26 @@ class MainActivity : AppCompatActivity() {
         observeViewModel()
 
         val restartId = intent.getStringExtra("RESTART_WITH_ID")
+        val pendingCourseId = intent.getStringExtra("PENDING_COURSE_ID")
+        val pendingProtoId = intent.getStringExtra("PENDING_PROTO_ID")
         if (restartId != null) {
             viewModel.loadSchedule(restartId)
-        } else if (savedInstanceState == null) {
-            viewModel.loadInitialSchedule()
+            intent.removeExtra("RESTART_WITH_ID")
+            // Если есть отложенный запрос баллов — выполняем его
+            if (pendingCourseId != null) {
+                // Небольшая задержка, чтобы UI успел прогрузиться
+                swipeRefreshLayout.postDelayed({
+                    viewModel.loadGrades(pendingCourseId, pendingProtoId)
+                    Toast.makeText(this, "Повторная загрузка баллов...", Toast.LENGTH_SHORT).show()
+                }, 500)
+            }
+        } else {
+            // Во всех остальных случаях (обычный запуск, восстановление из фона)
+            // Проверяем: если данные уже есть в ViewModel (например, при повороте экрана) - ничего не делаем.
+            // Если данных нет (холодный старт или восстановление процесса) - грузим КЭШ.
+            if (viewModel.scheduleMap.value == null) {
+                viewModel.loadInitialSchedule(keepCurrentPosition = savedInstanceState != null)
+            }
         }
     }
 
@@ -291,6 +307,8 @@ class MainActivity : AppCompatActivity() {
         val rgProfileMode = navigationView.findViewById<RadioGroup>(R.id.rgProfileMode)
         val rbBar = navigationView.findViewById<RadioButton>(R.id.rbModeBar)
         val rbDropdown = navigationView.findViewById<RadioButton>(R.id.rbModeDropdown)
+        val btnCorruptToken = navigationView.findViewById<View>(R.id.btnCorruptToken)
+        val btnGradebook = navigationView.findViewById<View>(R.id.btnGlobalGradebook)
 
         if (ApiSettings.getProfileDisplayMode(this) == com.fuck.modeus.data.ProfileDisplayMode.BAR) {
             rbBar.isChecked = true
@@ -315,6 +333,48 @@ class MainActivity : AppCompatActivity() {
         } else {
             rbRdCenter.isChecked = true
             btnLogout.visibility = View.GONE
+        }
+
+        btnCorruptToken.setOnClickListener {
+            // 1. Сначала узнаем наш реальный ID, пока токен еще жив
+            val currentId = com.fuck.modeus.data.TokenManager.getPersonIdFromToken(this)
+
+            if (currentId != null) {
+                // 2. Создаем "куклу" - JSON с нашим ID
+                val fakeJson = """{"person_id": "$currentId"}"""
+
+                // 3. Кодируем в Base64 (как в настоящем JWT)
+                val fakePayload = android.util.Base64.encodeToString(
+                    fakeJson.toByteArray(),
+                    android.util.Base64.NO_WRAP or android.util.Base64.URL_SAFE
+                )
+
+                // 4. Склеиваем фейковый токен: Header.Payload.BadSignature
+                // Для приложения он выглядит валидным (ID читается),
+                // но сервер его отвергнет из-за подписи.
+                val badToken = "eyJhbGciOiJIUzI1NiJ9.$fakePayload.I_AM_BAD_SIGNATURE"
+
+                com.fuck.modeus.data.TokenManager.saveToken(this, badToken)
+                Toast.makeText(this, "Токен подменен (ID сохранен, но подпись неверна). Жми 'Баллы'!", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(this, "Сначала войдите в аккаунт, чтобы было что портить!", Toast.LENGTH_SHORT).show()
+            }
+
+            drawerLayout.closeDrawer(GravityCompat.END)
+        }
+
+        btnGradebook.setOnClickListener {
+            // Проверка на "Свой профиль"
+            val myId = com.fuck.modeus.data.TokenManager.getPersonIdFromToken(this)
+            val currentId = viewModel.currentTargetId
+
+            if (myId != null && currentId != null && myId == currentId) {
+                viewModel.loadGlobalGradebook()
+                Toast.makeText(this, "Собираем оценки по всем предметам...", Toast.LENGTH_SHORT).show()
+                drawerLayout.closeDrawer(GravityCompat.END)
+            } else {
+                Toast.makeText(this, "Зачётка доступна только в вашем профиле SFEDU", Toast.LENGTH_LONG).show()
+            }
         }
 
         rbSfedu.setOnClickListener {
@@ -652,29 +712,58 @@ class MainActivity : AppCompatActivity() {
         val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_lesson_details, null)
         val dialog = AlertDialog.Builder(this)
             .setView(dialogView)
-            .setPositiveButton("Закрыть", null)
+            //.setPositiveButton("Закрыть", null)
             .create()
+
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
 
         val tvSubject = dialogView.findViewById<TextView>(R.id.tvDetailSubject)
         val tvModuleFull = dialogView.findViewById<TextView>(R.id.tvDetailModuleFull)
-        val tvTeacher = dialogView.findViewById<TextView>(R.id.tvDetailTeacher)
+        val containerTeachers = dialogView.findViewById<LinearLayout>(R.id.containerTeachersList)
         val tvRoom = dialogView.findViewById<TextView>(R.id.tvDetailRoom)
         val tvGroup = dialogView.findViewById<TextView>(R.id.tvDetailGroup)
+        val teachersList = item.teacher.split("\n").filter { it.isNotBlank() }
 
         tvSubject.text = item.subject
         tvModuleFull.text = "📚 Модуль: ${item.moduleFullName ?: "не указан"}"
 
-        tvTeacher.text = "🧑‍🏫 Преподаватель: ${item.teacher}"
-        if (item.teacher != "не назначен") {
-            tvTeacher.setTextColor(getColor(R.color.link_blue))
-            tvTeacher.setOnClickListener { searchFor(item.teacher); dialog.dismiss() }
-            tvTeacher.setOnLongClickListener {
-                try {
-                    val url = "https://www.google.com/search?q=${android.net.Uri.encode("${item.teacher} ЮФУ")}"
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        if (teachersList.isEmpty() || (teachersList.size == 1 && teachersList[0] == "не назначен")) {
+            val tv = TextView(this)
+            tv.text = "не назначен"
+            tv.setTextColor(Color.GRAY)
+            tv.textSize = 16f
+            containerTeachers.addView(tv)
+        } else {
+            // Для каждого препода создаем свой TextView
+            for (teacherName in teachersList) {
+                val tv = TextView(this)
+                tv.text = teacherName.trim()
+                tv.textSize = 16f
+                tv.setTextColor(getColor(R.color.link_blue)) // Синий цвет ссылки
+
+                // Отступы и фон нажатия
+                tv.setPadding(0, 8, 0, 8)
+                val outValue =android.util.TypedValue()
+                theme.resolveAttribute(android.R.attr.selectableItemBackground, outValue, true)
+                tv.setBackgroundResource(outValue.resourceId)
+
+                // Клик - Поиск в приложении
+                tv.setOnClickListener {
+                    searchFor(teacherName.trim())
                     dialog.dismiss()
-                } catch (e: Exception) {}
-                true
+                }
+
+                // Долгий клик - Гугл
+                tv.setOnLongClickListener {
+                    try {
+                        val url = "https://www.google.com/search?q=${android.net.Uri.encode("${teacherName.trim()} ЮФУ")}"
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        dialog.dismiss()
+                    } catch (e: Exception) {}
+                    true
+                }
+
+                containerTeachers.addView(tv)
             }
         }
 
@@ -789,6 +878,30 @@ class MainActivity : AppCompatActivity() {
 
             if (!::gestureDetector.isInitialized) initGestureDetector()
         }
+
+        viewModel.authRequired.observe(this) { params ->
+            val (courseId, protoId) = params
+
+            // Запускаем LoginActivity с данными для возврата
+            val intent = Intent(this, LoginActivity::class.java)
+            // Передаем текущий ID пользователя, чтобы LoginActivity знала, кого перезагружать
+            val currentPersonId = viewModel.currentTargetId ?: com.fuck.modeus.data.TokenManager.getPersonIdFromToken(this)
+
+            intent.putExtra("TARGET_ID", currentPersonId)
+            intent.putExtra("PENDING_COURSE_ID", courseId)
+            intent.putExtra("PENDING_PROTO_ID", protoId)
+
+            startActivity(intent)
+            Toast.makeText(this, "Обновление сессии...", Toast.LENGTH_SHORT).show()
+        }
+
+        viewModel.gradebookData.observe(this) { list ->
+            if (list.isNotEmpty()) {
+                showGlobalGradebookDialog(list)
+                viewModel.clearGradebookData() // Очищаем, чтобы не открылось повторно при повороте
+            }
+        }
+
         viewModel.gradeData.observe(this) { data ->
             if (data != null) {
                 val (totalScore, list, controlType) = data // Распаковываем Triple
@@ -796,6 +909,7 @@ class MainActivity : AppCompatActivity() {
                 viewModel.clearGradeResult()
             }
         }
+
     }
 
     private fun showUrlEditDialog() {
@@ -939,6 +1053,8 @@ class MainActivity : AppCompatActivity() {
             .setView(dialogView)
             .create()
 
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+
         val rv = dialogView.findViewById<RecyclerView>(R.id.rvAttendees)
         val pb = dialogView.findViewById<ProgressBar>(R.id.pbAttendees)
         val tvError = dialogView.findViewById<TextView>(R.id.tvAttendeesError)
@@ -1014,5 +1130,32 @@ class MainActivity : AppCompatActivity() {
             }
         }
         return super.dispatchTouchEvent(ev)
+    }
+
+    private fun showGlobalGradebookDialog(items: List<com.fuck.modeus.data.GradebookEntry>) {
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_grades, null)
+        val dialog = AlertDialog.Builder(this).setView(dialogView).create()
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+
+        // Переиспользуем layout от обычных оценок, просто меняем заголовки
+        val tvSubject = dialogView.findViewById<TextView>(R.id.tvGradeSubject)
+        val tvTotal = dialogView.findViewById<TextView>(R.id.tvGradeTotal)
+        val tvDisclaimer = dialogView.findViewById<TextView>(R.id.tvGradeDisclaimer)
+        val tvControl = dialogView.findViewById<TextView>(R.id.tvGradeControl) // Скрываем
+        val rv = dialogView.findViewById<RecyclerView>(R.id.rvGrades)
+        val btnClose = dialogView.findViewById<View>(R.id.btnCloseGrades)
+
+        tvSubject.text = "Моя зачётка"
+        tvTotal.visibility = View.GONE
+        tvControl.visibility = View.GONE // Нам тут тип контроля не нужен
+        tvDisclaimer.visibility = View.GONE // Дисклеймер тоже можно убрать или изменить
+
+        rv.layoutManager = LinearLayoutManager(this)
+        val adapter = GradebookAdapter()
+        rv.adapter = adapter
+        adapter.submitList(items)
+
+        btnClose.setOnClickListener { dialog.dismiss() }
+        dialog.show()
     }
 }

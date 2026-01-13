@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content">
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_dialog_rounded"
+    android:padding="4dp">>
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -25,15 +27,20 @@
             android:text="📚 Модуль: Полное название модуля" />
 
         <TextView
-            android:id="@+id/tvDetailTeacher"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:clickable="true"
-            android:focusable="true"
-            android:background="?attr/selectableItemBackground"
-            android:paddingVertical="4dp"
-            android:text="🧑‍🏫 Преподаватель: ФИО" />
+            android:text="🧑‍🏫 Преподаватели:"
+            android:textColor="#C6C6C6"
+            android:textSize="14sp"/>
+
+        <!-- Контейнер, куда будем добавлять имена программно -->
+        <LinearLayout
+            android:id="@+id/containerTeachersList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginBottom="4dp"/>
 
         <TextView
             android:id="@+id/tvDetailRoom"

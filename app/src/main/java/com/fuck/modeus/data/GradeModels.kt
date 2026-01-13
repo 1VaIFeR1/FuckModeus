@@ -31,3 +31,9 @@ data class GradeUiItem(
     val score: String,
     val isZero: Boolean // Чтобы подсветить нули серым
 )
+data class GradebookEntry(
+    val subjectName: String,
+    val score: String,
+    val details: List<GradeUiItem>, // <--- Список работ внутри предмета
+    var isExpanded: Boolean = false // <--- Состояние UI
+)

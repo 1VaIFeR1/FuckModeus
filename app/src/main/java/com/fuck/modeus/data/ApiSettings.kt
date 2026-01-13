@@ -23,6 +23,7 @@ object ApiSettings {
     // Новые ключи
     private const val KEY_PROFILE_DISPLAY_MODE = "profile_display_mode"
     private const val KEY_PROFILE_NAME_PREFIX = "profile_name_"
+    private const val KEY_PROFILE_MAX_DATE_PREFIX = "profile_max_date_"
 
     // ... (Существующие методы getApiSource, setApiSource, getRd... setRd... оставляем) ...
     // Вставь их сюда, если копируешь, или просто добавь новые методы ниже:
@@ -75,5 +76,26 @@ object ApiSettings {
     fun getProfileTargetName(context: Context, profileIndex: Int): String? {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getString(KEY_PROFILE_NAME_PREFIX + profileIndex, null)
+    }
+
+    // Сохранить дату последней пары (в миллисекундах) для конкретного профиля
+    fun saveProfileMaxDate(context: Context, profileIndex: Int, maxDate: Long) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putLong(KEY_PROFILE_MAX_DATE_PREFIX + profileIndex, maxDate).apply()
+    }
+
+    // Получить максимальную дату среди ВСЕХ активных профилей
+    fun getGlobalMaxDate(context: Context): Long {
+        val count = getParallelCount(context)
+        var globalMax = 0L
+
+        for (i in 0 until count) {
+            val date = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getLong(KEY_PROFILE_MAX_DATE_PREFIX + i, 0L)
+            if (date > globalMax) {
+                globalMax = date
+            }
+        }
+        return globalMax
     }
 }
