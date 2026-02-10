@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/bg_dialog_rounded"
+    android:clipToOutline="true"> <!-- ВОТ ЭТА МАГИЧЕСКАЯ СТРОКА -->
+
+    <!-- Шапка -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="12dp"
+        android:background="#252525">
+
+        <ImageView
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:src="@android:drawable/ic_menu_recent_history"
+            app:tint="#FF9800"/> <!-- Исправлено на app:tint -->
+
+        <TextView
+            android:id="@+id/tvHistoryTitle"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:text="Архив"
+            android:textColor="@android:color/white"
+            android:textStyle="bold"
+            android:textSize="16sp"
+            android:layout_marginStart="12dp"/>
+
+        <ImageView
+            android:id="@+id/btnCloseHistory"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:src="@android:drawable/ic_menu_close_clear_cancel"
+            android:padding="4dp"
+            app:tint="@android:color/white"
+            android:background="?attr/selectableItemBackgroundBorderless"/>
+    </LinearLayout>
+
+    <!-- Недели -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvWeeksHistory"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#2F2F2F"/>
+
+    <!-- Дни -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvDaysHistory"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#2F2F2F"/>
+
+    <!-- Pager -->
+    <androidx.viewpager2.widget.ViewPager2
+        android:id="@+id/viewPagerHistory"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="#121212"/>
+
+</LinearLayout>

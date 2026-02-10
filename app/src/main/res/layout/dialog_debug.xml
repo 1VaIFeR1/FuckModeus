@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/bg_dialog_rounded"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Debug Menu"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:textColor="@android:color/white"
+        android:gravity="center"
+        android:layout_marginBottom="24dp"/>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Инструменты тестирования:"
+        android:textColor="#AAAAAA"
+        android:textSize="12sp"
+        android:layout_marginBottom="8dp"/>
+
+    <!-- КНОПКА 1: ИСПОРТИТЬ ТОКЕН -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnDebugCorruptToken"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Испортить токен (401)"
+        android:textColor="@android:color/white"
+        android:backgroundTint="#753F3F"
+        app:icon="@android:drawable/ic_lock_lock"
+        android:gravity="start|center_vertical"
+        android:layout_marginBottom="12dp"/>
+
+    <!-- КНОПКА 2: СМЕНА СЕМЕСТРА -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnDebugSwitchSemester"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Тест: Смена семестра (Архивация)"
+        android:textColor="@android:color/white"
+        android:backgroundTint="#753F3F"
+        app:icon="@android:drawable/ic_popup_sync"
+        android:gravity="start|center_vertical" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Генерирует фейковое расписание в будущем/прошлом семестре. Это должно вызвать:\n1. Архивацию текущего расписания в историю.\n2. Смену нумерации недель."
+        android:textColor="#808080"
+        android:textSize="8sp"
+        android:layout_marginBottom="8dp"/>
+
+    <!-- КНОПКА 3: МЕНЕДЖЕР ПАМЯТИ -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnDebugMemory"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Управление памятью (Файлы)"
+        android:textColor="@android:color/white"
+        android:backgroundTint="#753F3F"
+        app:icon="@android:drawable/ic_menu_manage"
+        android:gravity="start|center_vertical" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Позволяет просмотреть и удалить внутренние файлы приложения (Кэш, База ID, Настройки, История)."
+        android:textColor="#808080"
+        android:textSize="8sp"
+        android:layout_marginBottom="8dp"/>
+
+    <!-- КНОПКА 4: ЭКСПОРТ БАЗЫ -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnDebugExportDb"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Экспорт базы ID (JSON)"
+        android:textColor="@android:color/white"
+        android:backgroundTint="#753F3F"
+        app:icon="@android:drawable/ic_menu_share"
+        app:iconTint="@android:color/white"
+        android:gravity="start|center_vertical"
+        android:layout_marginBottom="24dp"/>
+
+    <Button
+        android:id="@+id/btnCloseDebug"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Закрыть"
+        android:backgroundTint="#555555"
+        android:textColor="@android:color/white"/>
+
+</LinearLayout>

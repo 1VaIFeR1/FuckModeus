@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_dialog_rounded">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Редактор архива"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:textColor="@android:color/white"
+            android:gravity="center"
+            android:layout_marginBottom="24dp"/>
+
+        <!-- 1. ИМЯ ФАЙЛА -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Название записи:"
+            android:textColor="#AAAAAA"
+            android:textSize="12sp"/>
+
+        <EditText
+            android:id="@+id/etFileName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_search_field"
+            android:textColor="@android:color/white"
+            android:padding="12dp"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="8dp"
+            android:hint="Например: Осень 2023"
+            android:textColorHint="#808080"/>
+
+        <Button
+            android:id="@+id/btnRenameOnly"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Переименовать"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_marginBottom="16dp"/>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#444444"
+            android:layout_marginBottom="16dp"/>
+
+        <!-- 2. СКАЧИВАНИЕ (Генератор) -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Скачать данные (Заполнить)"
+            android:textStyle="bold"
+            android:textColor="#FFC107"
+            android:textSize="16sp"
+            android:layout_marginBottom="12dp"/>
+
+        <!-- Поиск объекта (AutoComplete) -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Чье расписание качаем (начните ввод):"
+            android:textColor="#AAAAAA"
+            android:textSize="12sp"/>
+
+        <!-- Заменили EditText на AutoCompleteTextView -->
+        <AutoCompleteTextView
+            android:id="@+id/etTargetSearch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="8dp"
+            android:background="@drawable/bg_search_field"
+            android:textColor="@android:color/white"
+            android:padding="12dp"
+            android:hint="Фамилия или группа"
+            android:textColorHint="#808080"
+            android:imeOptions="actionDone"
+            android:inputType="text"
+            android:completionThreshold="2"
+            android:dropDownHeight="200dp"
+            android:popupBackground="#333333"/>
+
+        <!-- Индикатор выбранного ID -->
+        <TextView
+            android:id="@+id/tvSelectedTarget"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Объект не выбран"
+            android:textColor="#FF5252"
+            android:textSize="12sp"
+            android:layout_marginBottom="16dp"/>
+
+        <!-- Даты -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Диапазон дат:"
+            android:textColor="#AAAAAA"
+            android:textSize="12sp"/>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="12dp">
+
+            <Button
+                android:id="@+id/btnDateStart"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Начало"
+                android:textColor="#FFFFFF"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"/>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="—"
+                android:textColor="#FFFFFF"
+                android:layout_marginHorizontal="8dp"/>
+
+            <Button
+                android:id="@+id/btnDateEnd"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Конец"
+                android:textColor="#FFFFFF"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"/>
+        </LinearLayout>
+
+        <!-- Пресеты (Заменили чипы на кнопки) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="24dp">
+
+            <Button
+                android:id="@+id/btnPresetAutumn"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="🍂 Осень"
+                android:textSize="12sp"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#424242"
+                android:layout_marginEnd="4dp"/>
+
+            <Button
+                android:id="@+id/btnPresetSpring"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="🌱 Весна"
+                android:textSize="12sp"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#424242"
+                android:layout_marginStart="4dp"/>
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btnFetchSchedule"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Скачать и Сохранить"
+            android:backgroundTint="#FFC107"
+            android:textColor="@android:color/black"
+            android:layout_marginBottom="8dp"/>
+
+        <!-- Кнопка Отмены -->
+        <Button
+            android:id="@+id/btnCancelEditor"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Отмена"
+            android:backgroundTint="#D32F2F"
+            android:textColor="@android:color/white"/>
+
+    </LinearLayout>
+</ScrollView>

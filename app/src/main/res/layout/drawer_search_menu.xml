@@ -323,6 +323,36 @@
                         android:background="#555555"
                         android:layout_marginVertical="8dp"/>
 
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_settings_block"
+                        android:padding="12dp"
+                        android:layout_marginBottom="16dp">
+
+                        <com.google.android.material.switchmaterial.SwitchMaterial
+                            android:id="@+id/switchHistory"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Сохранять историю семестров"
+                            android:textColor="@android:color/white"
+                            android:textSize="14sp"/>
+
+                        <!-- Кнопка выбора профилей (скрыта по умолчанию) -->
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnConfigHistoryProfiles"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Выбрать профили для истории"
+                            android:textColor="@android:color/white"
+                            android:backgroundTint="#424242"
+                            android:visibility="gone"
+                            style="@style/Widget.MaterialComponents.Button.TextButton"
+                            android:layout_marginTop="4dp"/>
+
+                    </LinearLayout>
+
                     <com.google.android.material.switchmaterial.SwitchMaterial
                         android:id="@+id/switchParallel"
                         android:layout_width="match_parent"
@@ -446,18 +476,6 @@
                         android:layout_marginBottom="8dp"/>
 
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnExportDb"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="Экспорт базы (JSON)"
-                        android:textColor="@android:color/white"
-                        android:backgroundTint="#4CAF50"
-                        app:icon="@android:drawable/ic_menu_share"
-                        app:iconTint="@android:color/white"
-                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                        android:layout_marginBottom="8dp"/>
-
-                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnShowHelp"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -470,13 +488,26 @@
                         android:layout_marginBottom="8dp"/>
 
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnCorruptToken"
+                        android:id="@+id/btnOpenHistory"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="🐞 [DEBUG] Испортить токен"
+                        android:text="Архив расписаний"
+                        android:textColor="@android:color/white"
+                        android:backgroundTint="#FF9800"
+                        app:icon="@android:drawable/ic_menu_recent_history"
+                        app:iconTint="@android:color/white"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:layout_marginBottom="8dp"/>
+
+                    <!-- DEBUG PANEL -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnDebugPanel"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="[DEBUG] Панель разработчика"
                         android:textColor="@android:color/white"
                         android:backgroundTint="#D32F2F"
-                        app:icon="@android:drawable/ic_delete"
+                        app:icon="@android:drawable/stat_notify_error"
                         app:iconTint="@android:color/white"
                         style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                         android:layout_marginBottom="8dp"/>

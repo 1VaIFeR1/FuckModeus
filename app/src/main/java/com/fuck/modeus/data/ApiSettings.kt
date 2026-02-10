@@ -25,6 +25,8 @@ object ApiSettings {
     private const val KEY_PROFILE_NAME_PREFIX = "profile_name_"
     private const val KEY_PROFILE_MAX_DATE_PREFIX = "profile_max_date_"
     private const val KEY_FIRST_RUN = "is_first_run_v3_2"
+    private const val KEY_HISTORY_ENABLED = "history_enabled"
+    private const val KEY_HISTORY_ALLOWED_PROFILES = "history_allowed_profiles" // Set<String>
 
     // ... (Существующие методы getApiSource, setApiSource, getRd... setRd... оставляем) ...
     // Вставь их сюда, если копируешь, или просто добавь новые методы ниже:
@@ -108,5 +110,28 @@ object ApiSettings {
     fun setFirstRunCompleted(context: Context) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit().putBoolean(KEY_FIRST_RUN, false).apply()
+    }
+
+    // 1. По умолчанию FALSE (как ты просил)
+    fun isHistoryEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_HISTORY_ENABLED, false)
+    }
+
+    fun setHistoryEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_HISTORY_ENABLED, enabled).apply()
+    }
+
+    // 2. Методы для списка профилей, которые надо сохранять
+    // Храним индексы профилей в виде строк ("0", "1", "3")
+    fun getHistoryAllowedProfiles(context: Context): Set<String> {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getStringSet(KEY_HISTORY_ALLOWED_PROFILES, emptySet()) ?: emptySet()
+    }
+
+    fun setHistoryAllowedProfiles(context: Context, indexes: Set<String>) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putStringSet(KEY_HISTORY_ALLOWED_PROFILES, indexes).apply()
     }
 }

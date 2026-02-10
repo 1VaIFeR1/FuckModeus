@@ -133,7 +133,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Внизу настроек есть скрываемое меню. Там можно:\n• Обновить базу ID (скачать список новых первокурсников и преподов).\n• Экспортировать базу в файл.\n• Вызвать эту справку повторно."
+                android:text="Внизу настроек есть скрываемое меню. Там можно:\n• Обновить базу ID (скачать список новых первокурсников и преподов).\n• Вызвать эту справку повторно. \n• Открыть архив расписаний."
                 android:textColor="#DDDDDD"
                 android:layout_marginBottom="8dp"/>
             <ImageView
@@ -275,6 +275,52 @@
                 android:layout_width="match_parent"
                 android:layout_height="250dp"
                 android:src="@drawable/zachetka"
+                android:scaleType="fitCenter"
+                android:layout_marginBottom="24dp"/>
+
+            <Space android:layout_width="match_parent" android:layout_height="24dp"/>
+
+            <!-- 9. АРХИВ РАСПИСАНИЙ -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="9. Архив расписаний"
+                android:textStyle="bold"
+                android:textColor="#FFC107"
+                android:textSize="18sp"
+                android:layout_marginBottom="8dp"/>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Как включить:\nНастройки -> Доп. опции -> Включить 'Сохранять историю'.\n\nПриложение будет автоматически сохранять расписание при смене семестра. Чтобы открыть архив, нажмите кнопку 'Архив расписаний' в тех же настройках."
+                android:textColor="#DDDDDD"
+                android:layout_marginBottom="12dp"/>
+
+            <!-- Скрин: Список архива -->
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:adjustViewBounds="true"
+                android:maxHeight="300dp"
+                android:src="@drawable/arhiv_list"
+                android:scaleType="fitCenter"
+                android:layout_marginBottom="12dp"/>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Инструменты Архива:\n• Нажмите на файл, чтобы открыть его (режим просмотра).\n• Нажмите 🗑️ для удаления.\n• Нажмите ✏️ для переименования.\n\nКнопка 'Скачать расписание' позволяет загрузить данные за прошлые годы или любые даты вручную."
+                android:textColor="#DDDDDD"
+                android:layout_marginBottom="12dp"/>
+
+            <!-- Скрин: Редактор -->
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:adjustViewBounds="true"
+                android:maxHeight="400dp"
+                android:src="@drawable/arhiv_editor"
                 android:scaleType="fitCenter"
                 android:layout_marginBottom="24dp"/>
 

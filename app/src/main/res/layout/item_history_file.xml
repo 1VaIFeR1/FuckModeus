@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:padding="12dp"
+    android:background="@drawable/bg_history_item"
+    android:layout_marginBottom="8dp"> <!-- Отступ снизу между кнопками -->
+
+    <!-- Иконка файла -->
+    <ImageView
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:src="@android:drawable/ic_menu_recent_history"
+        app:tint="#AAAAAA"
+        android:layout_marginEnd="12dp"/>
+
+    <!-- Название -->
+    <TextView
+        android:id="@+id/tvFileName"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:text="Осень 2025"
+        android:textColor="@android:color/white"
+        android:textSize="16sp"
+        android:textStyle="bold"/>
+
+    <!-- РЕДАКТИРОВАТЬ -->
+    <ImageView
+        android:id="@+id/btnEdit"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:src="@android:drawable/ic_menu_edit"
+        app:tint="#FFC107"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:padding="6dp"
+        android:layout_marginEnd="4dp"/>
+
+    <!-- УДАЛИТЬ -->
+    <ImageView
+        android:id="@+id/btnDelete"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:src="@android:drawable/ic_menu_delete"
+        app:tint="#FF5252"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:padding="6dp"/>
+
+</LinearLayout>

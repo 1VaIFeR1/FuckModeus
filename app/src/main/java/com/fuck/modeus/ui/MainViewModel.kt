@@ -413,6 +413,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val scheduleItems = parseResponseV2(scheduleResponse)
                     val sortedItems = scheduleItems.sortedBy { it.fullStartDate }
 
+                    if (sortedItems.isNotEmpty()) {
+                        recalculateSemesterStart(sortedItems.first().fullStartDate)
+                    }
+
                     updateProfileMaxDateInSettings(sortedItems)
 
                     // Определяем имя (ФИО препода или номер аудитории)
@@ -427,7 +431,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // -------------------------------------------------------------
 
                     val dataToCache = CachedData(targetId, targetName, currentTime, responseString)
-                    saveDataToFile(dataToCache)
+                    saveDataToFile(dataToCache, sortedItems)
 
                     _scheduleTitle.postValue(targetName)
                     _lastUpdateTime.postValue("Последнее обновление: $currentTime")
@@ -612,13 +616,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun onPageChanged(position: Int) {
-        _currentPagerPosition.value = position
-        val startCal = Calendar.getInstance().apply { time = semesterStartDate }
-        toStartOfDay(startCal); startCal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
-        if (startCal.time.after(semesterStartDate)) startCal.add(Calendar.DAY_OF_MONTH, -7)
-        startCal.add(Calendar.DAY_OF_YEAR, position)
-        val currentDate = startCal.time
-        updateSelectedWeek(currentDate)
+        _currentPagerPosition.postValue(position)
+
+        // 1. Вычисляем дату, на которую мы перелистнули
+        val cal = Calendar.getInstance()
+        cal.time = semesterStartDate
+        // Сбрасываем время в 00:00:00 для чистоты сравнения
+        cal.set(Calendar.HOUR_OF_DAY, 12) // Берем полдень, чтобы избежать проблем с переходом суток
+        cal.set(Calendar.MINUTE, 0)
+        cal.set(Calendar.SECOND, 0)
+        cal.add(Calendar.DAY_OF_YEAR, position)
+
+        val currentDateInMillis = cal.timeInMillis
+
+        // 2. Ищем неделю, которая содержит эту дату
+        val currentWeeks = _weeks.value ?: return
+
+        // Оптимизация: проверяем, нужно ли вообще обновлять список
+        val alreadySelectedWeek = currentWeeks.find { it.isSelected }
+
+        // Если текущая дата уже внутри выделенной недели — выходим (не тратим ресурсы)
+        if (alreadySelectedWeek != null &&
+            currentDateInMillis >= alreadySelectedWeek.startDate.time &&
+            currentDateInMillis <= alreadySelectedWeek.endDate.time) {
+            return
+        }
+
+        // 3. Если неделя сменилась — обновляем список
+        val updated = currentWeeks.map { week ->
+            // Проверка: Дата попадает в диапазон [Начало недели; Конец недели]
+            // Добавляем небольшой буфер (1 час), чтобы компенсировать возможные сдвиги
+            val isSelected = currentDateInMillis >= (week.startDate.time - 3600000) &&
+                    currentDateInMillis <= (week.endDate.time + 3600000)
+            week.copy(isSelected = isSelected)
+        }
+        _weeks.postValue(updated)
     }
 
     fun getLessonsForDate(dateMillis: Long): List<ScheduleItem> {
@@ -626,14 +658,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return _scheduleMap.value?.get(dayStart) ?: emptyList()
     }
 
-    private fun updateSelectedWeek(currentDate: Date) {
-        val currentWeeks = _weeks.value ?: return
-        val updated = currentWeeks.map { week ->
-            val isSelected = currentDate.time >= week.startDate.time && currentDate.time <= week.endDate.time
-            week.copy(isSelected = isSelected)
-        }
-        _weeks.postValue(updated)
-    }
 
     // --- Helpers ---
 
@@ -679,12 +703,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if(personId!=null) intent.putExtra("TARGET_ID", personId)
         getApplication<Application>().startActivity(intent)
     }
-    private fun saveDataToFile(data: CachedData) {
+    private fun saveDataToFile(data: CachedData, items: List<ScheduleItem>) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val fileName = getCacheFileName() // Получаем динамическое имя
+                val fileName = getCacheFileName()
+                val context = getApplication<Application>()
+
+                // --- ПРОВЕРКА ИСТОРИИ ПЕРЕД ЗАПИСЬЮ ---
+                checkAndArchiveHistory(context, items, fileName)
+                // ---------------------------------------
+
                 val jsonString = Gson().toJson(data)
-                val fileOutputStream = getApplication<Application>().openFileOutput(fileName, Context.MODE_PRIVATE)
+                val fileOutputStream = context.openFileOutput(fileName, Context.MODE_PRIVATE)
                 fileOutputStream.write(jsonString.toByteArray())
                 fileOutputStream.close()
                 Log.d(TAG, "Saved to $fileName")
@@ -703,6 +733,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val scheduleResponse = Gson().fromJson(cachedData.scheduleJsonResponse, ScheduleResponse::class.java)
                 val items = parseResponseV2(scheduleResponse).sortedBy { it.fullStartDate }
                 currentTargetId = cachedData.targetId
+
+                // Пересчитываем старт семестра
+                if (items.isNotEmpty()) {
+                    recalculateSemesterStart(items.first().fullStartDate)
+                }
                 updateProfileMaxDateInSettings(items)
 
                 _scheduleTitle.postValue(cachedData.targetName)
@@ -713,21 +748,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (!keepCurrentPosition) {
                     setInitialPage()
                 } else {
-                    // ИСПРАВЛЕНИЕ: Если мы сохраняем позицию, нужно восстановить
-                    // правильное выделение недели для текущего отображаемого дня
+                    // ИСПРАВЛЕНИЕ: Восстанавливаем неделю МАТЕМАТИЧЕСКИ
                     val currentPos = _currentPagerPosition.value ?: 0
 
-                    // Вычисляем дату, на которую смотрит пейджер
-                    val startCal = Calendar.getInstance().apply { time = semesterStartDate }
-                    toStartOfDay(startCal)
-                    startCal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
-                    if (startCal.time.after(semesterStartDate)) startCal.add(Calendar.DAY_OF_MONTH, -7)
+                    // Формула: (Позиция / 7 дней) + 1 = Номер недели
+                    val targetWeekNumber = (currentPos / 7) + 1
 
-                    startCal.add(Calendar.DAY_OF_YEAR, currentPos)
-                    val currentDateInPager = startCal.time
-
-                    // Обновляем выделение в списке недель
-                    updateSelectedWeek(currentDateInPager)
+                    onPageChanged(currentPos)
                 }
             } catch (e: Exception) {
                 // Если файла нет (пустой профиль) - чистим UI
@@ -738,12 +765,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (!keepCurrentPosition) {
                     setInitialPage()
                 } else {
-                    // Аналогично обновляем неделю даже для пустого расписания,
-                    // чтобы выделение не прыгало
+                    // Аналогично для catch блока
                     val currentPos = _currentPagerPosition.value ?: 0
-                    val startCal = Calendar.getInstance().apply { time = semesterStartDate }
-                    startCal.add(Calendar.DAY_OF_YEAR, currentPos)
-                    updateSelectedWeek(startCal.time)
+                    val targetWeekNumber = (currentPos / 7) + 1
+                    onPageChanged(currentPos)
                 }
             }
         }
@@ -1037,5 +1062,275 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         // Сохраняем в настройки
         ApiSettings.saveProfileMaxDate(context, currentIndex, maxTime)
+    }
+
+    // --- НОВАЯ ЛОГИКА: Определение начала семестра по первой паре ---
+    private fun recalculateSemesterStart(firstLessonMillis: Long) {
+        val cal = Calendar.getInstance()
+        cal.timeInMillis = firstLessonMillis
+
+        val year = cal.get(Calendar.YEAR)
+        val month = cal.get(Calendar.MONTH) // 0 = Январь, 1 = Февраль ...
+
+        val newSemesterStart = Calendar.getInstance()
+
+        // Логика:
+        // Если пара в Феврале(1) ... Августе(7) -> Это Весенний семестр (Начало ~7-9 Февраля)
+        // Иначе (Сентябрь...Январь) -> Это Осенний семестр (Начало 1 Сентября)
+
+        if (month in Calendar.FEBRUARY..Calendar.AUGUST) {
+            // ВЕСНА
+            newSemesterStart.set(year, Calendar.FEBRUARY, 7, 0, 0, 0)
+            // Если вдруг 7 февраля это выходной или середина недели, можно корректировать,
+            // но для отсчета недель 7 число подходит идеально (Modeus обычно ставит начало 2-го семестра тут).
+        } else {
+            // ОСЕНЬ
+            // Если месяц Январь(0), значит это конец осеннего семестра, который начался в ПРОШЛОМ году
+            val startYear = if (month == Calendar.JANUARY) year - 1 else year
+            newSemesterStart.set(startYear, Calendar.SEPTEMBER, 1, 0, 0, 0)
+        }
+
+        newSemesterStart.set(Calendar.MILLISECOND, 0)
+
+        // Применяем, только если дата изменилась
+        if (semesterStartDate.time != newSemesterStart.timeInMillis) {
+            semesterStartDate = newSemesterStart.time
+            Log.d(TAG, "Semester Start Updated to: $semesterStartDate based on first lesson: ${Date(firstLessonMillis)}")
+        }
+    }
+
+    private fun checkAndArchiveHistory(context: Context, newItems: List<ScheduleItem>, currentCacheFileName: String) {
+        // 1. Глобальная проверка: Включена ли история вообще?
+        if (!ApiSettings.isHistoryEnabled(context) || newItems.isEmpty()) return
+
+        // 2. Проверка профиля (если мультипрофиль включен)
+        if (ApiSettings.isParallelEnabled(context)) {
+            val currentProfileIndex = ApiSettings.getCurrentProfile(context).toString()
+            val allowedProfiles = ApiSettings.getHistoryAllowedProfiles(context)
+
+            // Если текущего профиля нет в списке разрешенных -> Выходим
+            if (!allowedProfiles.contains(currentProfileIndex)) {
+                return
+            }
+        }
+
+        val dbFile = File(context.filesDir, currentCacheFileName)
+        if (!dbFile.exists()) return
+
+        try {
+            // 1. Читаем СТАРЫЙ кэш (который сейчас будем перезаписывать)
+            val oldJson = dbFile.readText()
+            val oldCachedData = Gson().fromJson(oldJson, CachedData::class.java)
+            val oldResponse = Gson().fromJson(oldCachedData.scheduleJsonResponse, ScheduleResponse::class.java)
+            val oldItems = parseResponseV2(oldResponse).sortedBy { it.fullStartDate }
+
+            if (oldItems.isEmpty()) return
+
+            // 2. Сравниваем семестры
+            // Берем первую пару старого и нового расписания
+            val oldFirst = Calendar.getInstance().apply { timeInMillis = oldItems.first().fullStartDate }
+            val newFirst = Calendar.getInstance().apply { timeInMillis = newItems.first().fullStartDate }
+
+            // Если разница между первыми парами больше 3 месяцев (примерно), считаем это новым семестром
+            // Или проверяем, перешли ли мы границу "Февраль/Сентябрь"
+            val oldMonth = oldFirst.get(Calendar.MONTH)
+            val newMonth = newFirst.get(Calendar.MONTH)
+
+            // Простая проверка: если мы перепрыгнули из Осени (Сен-Янв) в Весну (Фев-Авг) или наоборот
+            val isOldSpring = oldMonth in Calendar.FEBRUARY..Calendar.AUGUST
+            val isNewSpring = newMonth in Calendar.FEBRUARY..Calendar.AUGUST
+
+            if (isOldSpring != isNewSpring || Math.abs(newFirst.get(Calendar.YEAR) - oldFirst.get(Calendar.YEAR)) > 0) {
+                // СЕМЕСТР СМЕНИЛСЯ! Сохраняем старый файл в историю.
+
+                val semesterName = if (isOldSpring) "Весна" else "Осень"
+                val year = oldFirst.get(Calendar.YEAR)
+                val targetName = oldCachedData.targetName.replace(" ", "_") // Убираем пробелы
+
+                // Имя файла: history_Иванов_ИИ_Осень_2025.json
+                val historyFileName = "history_${targetName}_${semesterName}_$year.json"
+                val historyFile = File(context.filesDir, historyFileName)
+
+                if (!historyFile.exists()) {
+                    historyFile.writeText(oldJson)
+                    Log.d(TAG, "History archived: $historyFileName")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to archive history", e)
+        }
+    }
+
+    fun renameHistoryFile(oldName: String, newName: String): Boolean {
+        try {
+            val oldFile = File(getApplication<Application>().filesDir, oldName)
+            // Формируем правильное имя файла (history_Name_...)
+            // Но пользователь вводит просто "Осень 2023", нам надо сохранить префикс history_
+            // Проще всего: сохранить как есть, но добавить .json если нет
+            val safeName = if (newName.endsWith(".json")) newName else "$newName.json"
+            val prefixName = if (safeName.startsWith("history_")) safeName else "history_$safeName"
+
+            val newFile = File(getApplication<Application>().filesDir, prefixName)
+            return oldFile.renameTo(newFile)
+        } catch (e: Exception) {
+            return false
+        }
+    }
+
+    fun downloadCustomSchedule(saveName: String, targetId: String, targetName: String, dateStart: String, dateEnd: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _searchInProgress.postValue(true) // Используем лоадер поиска
+            try {
+                val api = RetrofitInstance.getApi(getApplication())
+                val apiSource = ApiSettings.getApiSource(getApplication())
+
+                // Тело запроса
+                val body = JsonObject().apply {
+                    addProperty("size", 3000)
+                    addProperty("timeMin", dateStart)
+                    addProperty("timeMax", dateEnd)
+
+                    val ids = JsonArray()
+                    ids.add(targetId)
+                    // Пытаемся угадать тип по ID (или просто шлем оба поля, сервер разберется, если повезет)
+                    // Но лучше знать тип. Давай считать всех людьми по умолчанию,
+                    // или искать targetId в базе allTargets
+                    val target = allTargets.find { it.id == targetId }
+                    if (target?.type == TargetType.ROOM) {
+                        add("roomId", ids)
+                    } else {
+                        add("attendeePersonId", ids)
+                    }
+                }
+
+                // Запрос
+                val responseBody = if (apiSource == ApiSource.SFEDU) {
+                    api.getScheduleSfedu(body)
+                } else {
+                    val endpoint = ApiSettings.getRdEndpoint(getApplication())
+                    api.getScheduleRdCenter(endpoint, body)
+                }
+                val responseString = responseBody.string()
+
+                // Сохранение
+                val currentTime = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date())
+                val dataToCache = CachedData(targetId, targetName, currentTime, responseString)
+
+                // Формируем имя файла
+                val safeName = if (saveName.endsWith(".json")) saveName else "$saveName.json"
+                val fileName = if (safeName.startsWith("history_")) safeName else "history_$safeName"
+
+                val context = getApplication<Application>()
+                val jsonToWrite = Gson().toJson(dataToCache)
+                context.openFileOutput(fileName, Context.MODE_PRIVATE).use {
+                    it.write(jsonToWrite.toByteArray())
+                }
+
+                _error.postValue("Успешно скачано: $fileName")
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Custom DL Error", e)
+                _error.postValue("Ошибка скачивания: ${e.message}")
+            } finally {
+                _searchInProgress.postValue(false)
+            }
+        }
+    }
+
+    fun filterTargetsSync(query: String): List<ScheduleTarget> {
+        if (query.length < 2) return emptyList()
+        return allTargets.filter {
+            it.name.contains(query, ignoreCase = true)
+        }.take(10) // Ограничим 10 результатами, чтобы список не был бесконечным
+    }
+
+    fun debugSwitchSemester() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // 1. Определяем "Противоположный" семестр
+                val cal = Calendar.getInstance()
+                cal.time = semesterStartDate
+                val currentMonth = cal.get(Calendar.MONTH)
+
+                val targetDate: Date
+                val targetName: String
+
+                // Если сейчас Весна (Фев-Авг) -> Делаем Осень (Сентябрь)
+                if (currentMonth in Calendar.FEBRUARY..Calendar.AUGUST) {
+                    cal.set(Calendar.MONTH, Calendar.SEPTEMBER)
+                    cal.set(Calendar.DAY_OF_MONTH, 1)
+                    targetName = "Debug Осень ${cal.get(Calendar.YEAR)}"
+                } else {
+                    // Если сейчас Осень -> Делаем Весну (Февраль следующего года)
+                    cal.add(Calendar.YEAR, 1)
+                    cal.set(Calendar.MONTH, Calendar.FEBRUARY)
+                    cal.set(Calendar.DAY_OF_MONTH, 10)
+                    targetName = "Debug Весна ${cal.get(Calendar.YEAR)}"
+                }
+
+                // Ставим время пары на 10:00
+                cal.set(Calendar.HOUR_OF_DAY, 10)
+                cal.set(Calendar.MINUTE, 0)
+                targetDate = cal.time
+
+                // 2. Создаем Фейковую Пару
+                val fakeItem = ScheduleItem(
+                    id = UUID.randomUUID().toString(),
+                    fullStartDate = targetDate.time,
+                    subject = "ТЕСТ СМЕНЫ СЕМЕСТРА",
+                    moduleShortName = "DEBUG",
+                    startTime = "10:00",
+                    endTime = "11:35",
+                    date = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(targetDate),
+                    teacher = "System",
+                    room = "Server",
+                    type = "TEST",
+                    moduleFullName = "Тестирование архивации",
+                    groupCode = "000",
+                    teamSize = 1,
+                    locationType = "Debug",
+                    courseUnitId = null,
+                    coursePrototypeId = null
+                )
+
+                // 3. Создаем Фейковый JSON ответа (чтобы парсер не упал при следующем запуске)
+                // Нам нужно, чтобы внутри была хотя бы одна пара с нужной датой
+                val fakeJson = """
+                    {
+                      "_embedded": {
+                        "events": [
+                          {
+                            "id": "${fakeItem.id}",
+                            "name": "${fakeItem.subject}",
+                            "start": "${SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.getDefault()).format(targetDate)}",
+                            "end": "${SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.getDefault()).format(Date(targetDate.time + 5400000))}",
+                            "typeId": "LECT",
+                            "_links": { "course-unit-realization": { "href": "null" }, "cycle-realization": { "href": "null" } }
+                          }
+                        ]
+                      }
+                    }
+                """.trimIndent()
+
+                // 4. Формируем кэш
+                val currentId = currentTargetId ?: "debug_id"
+                val fakeCache = CachedData(currentId, targetName, "DEBUG GENERATED", fakeJson)
+                val newItems = listOf(fakeItem)
+
+                // 5. СОХРАНЯЕМ (Это вызовет checkAndArchiveHistory, так как даты сильно отличаются)
+                saveDataToFile(fakeCache, newItems)
+
+                // 6. Перезагружаем (чтобы увидеть изменения на экране)
+                // Небольшая задержка, чтобы файл успел записаться
+                delay(500)
+                loadDataFromFile()
+
+                _error.postValue("Сгенерирован новый семестр: $targetName. Старый должен быть в архиве.")
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Debug Error", e)
+                _error.postValue("Ошибка дебага: ${e.message}")
+            }
+        }
     }
 }
