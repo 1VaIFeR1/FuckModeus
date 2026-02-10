@@ -58,23 +58,6 @@
 
 ---
 
-## 🛠 Технический стек
-
-<details>
-<summary><b>Развернуть технические подробности</b></summary>
-
-*   **Язык:** Kotlin
-*   **Архитектура:** Single Activity, MVVM
-*   **Network:** Retrofit 2, OkHttp 3 (Custom Interceptors for Auth)
-*   **Async:** Kotlin Coroutines (Async/Await для параллельной загрузки баллов)
-*   **UI:** ViewPager2, RecyclerView, Material Components, Custom Views (ScrollAwareSwipeRefreshLayout)
-*   **Data:** SharedPreferences, JSON Caching (Gson)
-*   **Security:** JWT Decoding, Secure Token Storage
-
-</details>
-
----
-
 ## 🚀 Установка и Начало работы
 
 1.  **Скачайте APK** из раздела [Releases](../../releases).
